@@ -375,28 +375,63 @@ async def dice(interaction: discord.Interaction, bet: int):
         add_coins(user_id, bet)
         save_xp_data()
         streak = update_gambling_streak(user_id, True)
+        
+        win_messages = [
+            "You won. Interesting.\nI'll let you enjoy it… victories like this don't happen by accident.",
+            "Seems luck leaned your way this time.\nGo on, take it — I like seeing what you do with a win.",
+            "You actually outrolled me. Cute.\nRemember this feeling… it doesn't last forever.",
+            "You beat me this time.\nI wonder if you think you can do it again.",
+            "Well played.\nYou beat me this time.",
+            "Looks like you take this round.\nEnjoy it.",
+        ]
+        
         embed = discord.Embed(
-            title="Dice Roll 🎲",
-            description=f"You rolled: {user_roll}\nDealer rolled: {dealer_roll}\n\n✅ You won +{bet} coins.",
-            color=0x1bbe19,
+            title="🎉 You Won!",
+            description=f"{random.choice(win_messages)}\n\nYou rolled: {user_roll}\nIsla rolled: {dealer_roll}",
+            color=0x41b70b,
         )
+        embed.set_thumbnail(url="https://i.imgur.com/EuS7WME.png")
+        embed.set_footer(text=f"✅ +{bet} coins")
         await interaction.followup.send(embed=embed)
     elif user_roll < dealer_roll:
         add_coins(user_id, -bet)
         save_xp_data()
         streak = update_gambling_streak(user_id, False)
+        
+        loss_messages = [
+            "I had a feeling I'd win.",
+            "I guess the dice likes me more.",
+            "This round's mine.",
+            "I win.",
+            "You'll get me next time… maybe.",
+            "I won. Don't look so surprised.",
+        ]
+        
         embed = discord.Embed(
-            title="Dice Roll 🎲",
-            description=f"You rolled: {user_roll}\nDealer rolled: {dealer_roll}\n\n❌ You lost {bet} coins.",
-            color=0xaf0808,
+            title="💔 You Lost",
+            description=f"{random.choice(loss_messages)}\n\nYou rolled: {user_roll}\nIsla rolled: {dealer_roll}",
+            color=0xa80000,
         )
+        embed.set_thumbnail(url="https://i.imgur.com/wXrCGjP.png")
+        embed.set_footer(text=f"❌ -{bet} coins")
         await interaction.followup.send(embed=embed)
     else:
+        tie_messages = [
+            "A tie? Cute. You thought that meant something.",
+            "A draw. You're still playing on my terms.",
+            "Equal rolls. Try again when you're ready.",
+            "A tie. Let's see what you do next.",
+            "A draw. The game continues.",
+            "A tie. Interesting… but don't mistake that for a win.",
+        ]
+        
         embed = discord.Embed(
-            title="It's a Tie! 🎲",
-            description=f"Both rolled {user_roll}.\n\nYour bet has been returned.",
-            color=0xffae00,
+            title="⚖️ Tied",
+            description=f"{random.choice(tie_messages)}\n\nBoth rolled: {user_roll}",
+            color=0xf2d307,
         )
+        embed.set_thumbnail(url="https://i.imgur.com/bpbK4dS.png")
+        embed.set_footer(text="Your bet has been returned.")
         await interaction.followup.send(embed=embed)
 
 async def slots_bet(interaction: discord.Interaction, bet: int):
