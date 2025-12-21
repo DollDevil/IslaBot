@@ -115,17 +115,14 @@ async def on_message(message):
         is_bot_command = message.content.startswith('!') or (message.content.startswith('/') and len(message.content) > 1)
         if not is_bot_command:
             uid = str(user_id)
+            # Optimization: Use default data template
+            from core.data import _DEFAULT_USER_DATA, _user_data_cache
             if uid not in xp_data:
-                xp_data[uid] = {
-                    "xp": 0, "level": 1, "coins": 0,
-                    "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-                    "times_gambled": 0, "total_wins": 0,
-                    "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-                    "equipped_collar": None, "equipped_badge": None
-                }
-            if "messages_sent" not in xp_data[uid]:
-                xp_data[uid]["messages_sent"] = 0
-            xp_data[uid]["messages_sent"] = xp_data[uid].get("messages_sent", 0) + 1
+                xp_data[uid] = _DEFAULT_USER_DATA.copy()
+                _user_data_cache[uid] = xp_data[uid]
+            user_data = xp_data[uid]
+            user_data["messages_sent"] = user_data.get("messages_sent", 0) + 1
+            _user_data_cache[uid] = user_data
         
         if user_id in message_cooldowns:
             time_since_last = (current_time - message_cooldowns[user_id]).total_seconds()
@@ -189,17 +186,14 @@ async def on_voice_state_update(member, before, after):
             minutes = int(seconds // 60)
             if minutes > 0:
                 uid = str(member.id)
+                # Optimization: Use default data template
+                from core.data import _DEFAULT_USER_DATA, _user_data_cache
                 if uid not in xp_data:
-                    xp_data[uid] = {
-                        "xp": 0, "level": 1, "coins": 0,
-                        "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-                        "times_gambled": 0, "total_wins": 0,
-                        "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-                        "equipped_collar": None, "equipped_badge": None
-                    }
-                if "vc_minutes" not in xp_data[uid]:
-                    xp_data[uid]["vc_minutes"] = 0
-                xp_data[uid]["vc_minutes"] = xp_data[uid].get("vc_minutes", 0) + minutes
+                    xp_data[uid] = _DEFAULT_USER_DATA.copy()
+                    _user_data_cache[uid] = xp_data[uid]
+                user_data = xp_data[uid]
+                user_data["vc_minutes"] = user_data.get("vc_minutes", 0) + minutes
+                _user_data_cache[uid] = user_data
                 save_xp_data()
                 
                 xp_gained = minutes * VC_XP

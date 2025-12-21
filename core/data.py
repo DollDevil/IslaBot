@@ -4,9 +4,14 @@ Data management for user XP, levels, coins, and statistics
 import json
 import random
 import datetime
+import asyncio
 
 # Global XP data storage
 xp_data = {}
+
+# Optimization: Debouncing for file saves
+_save_pending = False
+_save_task = None
 
 def load_xp_data():
     """Load XP data from file"""
@@ -17,34 +22,105 @@ def load_xp_data():
     except FileNotFoundError:
         xp_data = {}
 
-def save_xp_data():
-    """Save XP data to file"""
-    try:
-        with open("data/xp.json", "w") as f:
-            json.dump(xp_data, f, indent=4)
-    except Exception as e:
-        print(f"Error saving XP data: {e}")
+# Optimization: Debouncing for file saves to reduce I/O
+_save_pending = False
+_save_task = None
+_last_save_time = None
+
+def save_xp_data(force=False):
+    """Save XP data to file with debouncing to prevent excessive writes"""
+    global _save_pending, _save_task, _last_save_time
+    
+    if force:
+        # Force immediate save (for shutdown, critical operations)
+        try:
+            with open("data/xp.json", "w") as f:
+                json.dump(xp_data, f, indent=4)
+            _last_save_time = datetime.datetime.now(datetime.UTC)
+        except Exception as e:
+            print(f"Error saving XP data: {e}")
+        _save_pending = False
+        if _save_task:
+            _save_task.cancel()
+            _save_task = None
+        return
+    
+    # Debounce: Only save if not already pending and enough time has passed
+    current_time = datetime.datetime.now(datetime.UTC)
+    if _last_save_time:
+        time_since_save = (current_time - _last_save_time).total_seconds()
+        if time_since_save < 2:  # Don't save more than once every 2 seconds
+            return
+    
+    if not _save_pending:
+        _save_pending = True
+        # Schedule save after 2 seconds (batches multiple rapid saves)
+        async def delayed_save():
+            await asyncio.sleep(2)
+            try:
+                with open("data/xp.json", "w") as f:
+                    json.dump(xp_data, f, indent=4)
+                global _last_save_time
+                _last_save_time = datetime.datetime.now(datetime.UTC)
+            except Exception as e:
+                print(f"Error saving XP data: {e}")
+            finally:
+                global _save_pending, _save_task
+                _save_pending = False
+                _save_task = None
+        
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                if _save_task:
+                    _save_task.cancel()
+                _save_task = asyncio.create_task(delayed_save())
+            else:
+                loop.run_until_complete(delayed_save())
+        except RuntimeError:
+            # No event loop, save immediately
+            try:
+                with open("data/xp.json", "w") as f:
+                    json.dump(xp_data, f, indent=4)
+                _last_save_time = datetime.datetime.now(datetime.UTC)
+            except Exception as e:
+                print(f"Error saving XP data: {e}")
+            _save_pending = False
+
+# Optimization: Cache user data lookups to avoid repeated string conversions
+_user_data_cache = {}
+
+def _get_user_data(user_id):
+    """Get user data with caching"""
+    uid = str(user_id)
+    if uid not in _user_data_cache or uid not in xp_data:
+        _user_data_cache[uid] = xp_data.get(uid, {})
+    elif uid in xp_data:
+        _user_data_cache[uid] = xp_data[uid]
+    return _user_data_cache[uid]
 
 def get_xp(user_id):
     """Get user's XP"""
-    return xp_data.get(str(user_id), {}).get("xp", 0)
+    return _get_user_data(user_id).get("xp", 0)
 
 def get_level(user_id):
     """Get user's level"""
-    return xp_data.get(str(user_id), {}).get("level", 1)
+    return _get_user_data(user_id).get("level", 1)
 
 def get_coins(user_id):
     """Get user's coin balance"""
-    return xp_data.get(str(user_id), {}).get("coins", 0)
+    return _get_user_data(user_id).get("coins", 0)
 
 def add_coins(user_id, amount):
     """Add coins to user's balance"""
     uid = str(user_id)
+    user_data = _get_user_data(user_id)
     if uid not in xp_data:
         xp_data[uid] = {"xp": 0, "level": 1, "coins": 0}
-    xp_data[uid]["coins"] = xp_data[uid].get("coins", 0) + amount
-    if xp_data[uid]["coins"] < 0:
-        xp_data[uid]["coins"] = 0  # Prevent negative coins
+        _user_data_cache[uid] = xp_data[uid]
+    coins = user_data.get("coins", 0) + amount
+    xp_data[uid]["coins"] = max(0, coins)  # Prevent negative coins
+    _user_data_cache[uid] = xp_data[uid]
 
 def has_coins(user_id, amount):
     """Check if user has enough coins"""
@@ -54,66 +130,46 @@ def increment_event_participation(user_id):
     """Increment event participation count for a user"""
     uid = str(user_id)
     if uid not in xp_data:
-        xp_data[uid] = {
-            "xp": 0, "level": 1, "coins": 0,
-            "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-            "times_gambled": 0, "total_wins": 0, "total_spent": 0,
-            "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-            "equipped_collar": None, "equipped_badge": None
-        }
-    if "event_participations" not in xp_data[uid]:
-        xp_data[uid]["event_participations"] = 0
-    xp_data[uid]["event_participations"] = xp_data[uid].get("event_participations", 0) + 1
+        xp_data[uid] = _DEFAULT_USER_DATA.copy()
+        _user_data_cache[uid] = xp_data[uid]
+    user_data = xp_data[uid]
+    user_data["event_participations"] = user_data.get("event_participations", 0) + 1
+    _user_data_cache[uid] = user_data
     save_xp_data()
 
 def increment_gambling_attempt(user_id):
     """Increment gambling attempt count for a user"""
     uid = str(user_id)
     if uid not in xp_data:
-        xp_data[uid] = {
-            "xp": 0, "level": 1, "coins": 0,
-            "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-            "times_gambled": 0, "total_wins": 0, "total_spent": 0,
-            "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-            "equipped_collar": None, "equipped_badge": None
-        }
-    if "times_gambled" not in xp_data[uid]:
-        xp_data[uid]["times_gambled"] = 0
-    if "total_spent" not in xp_data[uid]:
-        xp_data[uid]["total_spent"] = 0
-    xp_data[uid]["times_gambled"] = xp_data[uid].get("times_gambled", 0) + 1
+        xp_data[uid] = _DEFAULT_USER_DATA.copy()
+        _user_data_cache[uid] = xp_data[uid]
+    user_data = xp_data[uid]
+    user_data.setdefault("times_gambled", 0)
+    user_data.setdefault("total_spent", 0)
+    user_data["times_gambled"] += 1
+    _user_data_cache[uid] = user_data
     save_xp_data()
 
 def add_gambling_spent(user_id, amount):
     """Add to total money spent on gambling"""
     uid = str(user_id)
     if uid not in xp_data:
-        xp_data[uid] = {
-            "xp": 0, "level": 1, "coins": 0,
-            "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-            "times_gambled": 0, "total_wins": 0, "total_spent": 0,
-            "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-            "equipped_collar": None, "equipped_badge": None
-        }
-    if "total_spent" not in xp_data[uid]:
-        xp_data[uid]["total_spent"] = 0
-    xp_data[uid]["total_spent"] = xp_data[uid].get("total_spent", 0) + amount
+        xp_data[uid] = _DEFAULT_USER_DATA.copy()
+        _user_data_cache[uid] = xp_data[uid]
+    user_data = xp_data[uid]
+    user_data["total_spent"] = user_data.get("total_spent", 0) + amount
+    _user_data_cache[uid] = user_data
     save_xp_data()
 
 def increment_gambling_win(user_id):
     """Increment gambling win count for a user"""
     uid = str(user_id)
     if uid not in xp_data:
-        xp_data[uid] = {
-            "xp": 0, "level": 1, "coins": 0,
-            "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-            "times_gambled": 0, "total_wins": 0,
-            "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-            "equipped_collar": None, "equipped_badge": None
-        }
-    if "total_wins" not in xp_data[uid]:
-        xp_data[uid]["total_wins"] = 0
-    xp_data[uid]["total_wins"] = xp_data[uid].get("total_wins", 0) + 1
+        xp_data[uid] = _DEFAULT_USER_DATA.copy()
+        _user_data_cache[uid] = xp_data[uid]
+    user_data = xp_data[uid]
+    user_data["total_wins"] = user_data.get("total_wins", 0) + 1
+    _user_data_cache[uid] = user_data
     save_xp_data()
 
 def get_activity_quote(user_id, guild=None):

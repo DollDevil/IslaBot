@@ -103,7 +103,12 @@ async def update_roles_on_level(member: discord.Member, level: int):
     """Assign level roles based on reached level; remove all other level roles (only keep highest)"""
     if not isinstance(member, discord.Member):
         return
-    if member.bot or any(int(role.id) in EXCLUDED_ROLE_SET for role in member.roles):
+    if member.bot:
+        return
+    
+    # Optimization: Pre-compute role IDs once
+    current_role_ids = {int(role.id) for role in member.roles}
+    if any(rid in EXCLUDED_ROLE_SET for rid in current_role_ids):
         return
     
     # Find the highest level role the user qualifies for
@@ -116,7 +121,6 @@ async def update_roles_on_level(member: discord.Member, level: int):
     
     # Remove all level roles first (check current roles to see what needs removing)
     roles_to_remove = []
-    current_role_ids = {int(role.id) for role in member.roles}
     for lvl, role_id in LEVEL_ROLE_MAP.items():
         if role_id in current_role_ids:
             role = member.guild.get_role(role_id)

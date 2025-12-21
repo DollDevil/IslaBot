@@ -205,8 +205,9 @@ async def award_vc_xp():
 
 @tasks.loop(minutes=5)
 async def auto_save():
-    """Periodically save XP data as backup"""
-    save_xp_data()
+    """Periodically save XP data as backup (force save to ensure data persistence)"""
+    from core.data import save_xp_data
+    save_xp_data(force=True)  # Force save for scheduled backups
     print(f"Auto-saved XP data at {datetime.datetime.now(datetime.UTC)}")
 
 @tasks.loop(minutes=1)
@@ -214,14 +215,11 @@ async def daily_check_scheduler():
     """Automatically send Daily Check messages at scheduled times."""
     global last_daily_check_times_today
     
-    uk_tz = get_timezone("Europe/London")
+    uk_tz = _get_uk_timezone()
     if uk_tz is None:
         return
     
-    if USE_PYTZ:
-        now_uk = datetime.datetime.now(uk_tz)
-    else:
-        now_uk = datetime.datetime.now(uk_tz)
+    now_uk = datetime.datetime.now(uk_tz)
     
     today_str = now_uk.strftime("%Y-%m-%d")
     current_time = (now_uk.hour, now_uk.minute)
@@ -258,11 +256,21 @@ async def daily_check_scheduler():
                     print(f"Auto-sent Daily Check ({check_type}) at {now_uk.strftime('%H:%M:%S')} UK time")
                     break
 
+# Optimization: Cache timezone object to avoid repeated lookups
+_cached_uk_tz = None
+
+def _get_uk_timezone():
+    """Get UK timezone with caching"""
+    global _cached_uk_tz
+    if _cached_uk_tz is None:
+        _cached_uk_tz = get_timezone("Europe/London")
+    return _cached_uk_tz
+
 @tasks.loop(minutes=1)
 async def event_scheduler():
     """Automatically schedule events based on UK timezone schedule"""
     global active_event, last_event_times_today
-    from events import event_cooldown_until
+    from systems.events import event_cooldown_until
     
     if not events_enabled:
         return
@@ -272,15 +280,12 @@ async def event_scheduler():
     if event_cooldown_until and datetime.datetime.now(datetime.UTC) < event_cooldown_until:
         return
     
-    uk_tz = get_timezone("Europe/London")
+    uk_tz = _get_uk_timezone()
     if uk_tz is None:
         print("ERROR: Timezone support not available. Cannot schedule events. Install pytz: pip install pytz")
         return
     
-    if USE_PYTZ:
-        now_uk = datetime.datetime.now(uk_tz)
-    else:
-        now_uk = datetime.datetime.now(uk_tz)
+    now_uk = datetime.datetime.now(uk_tz)
     today_str = now_uk.strftime("%Y-%m-%d")
     current_time = (now_uk.hour, now_uk.minute)
     
@@ -305,6 +310,7 @@ async def event_scheduler():
                 if event_key in last_event_times_today:
                     continue
                 
+                # Optimization: Pre-filter events by tier (more efficient than list comprehension)
                 available_events = [et for et, t in EVENT_TIER_MAP.items() if t == tier]
                 if not available_events:
                     continue
