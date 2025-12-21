@@ -161,10 +161,9 @@ async def send_level_up_message(user_id):
     embed.add_field(name="ß▓╝ß▓╝", value="", inline=False)
     embed.add_field(name="Message from Isla <:kisses:1449998044446593125>", value=quote_text, inline=False)
 
-    # Send level-up message only to the specified channel
-    from core.config import ALLOWED_SEND_CHANNELS
-    level_up_channel_id = ALLOWED_SEND_CHANNELS[0]  # First channel is level up messages
-    channel = bot.get_channel(level_up_channel_id)
+    # Send level-up message only to the specified channel (1450107538019192832)
+    LEVEL_UP_CHANNEL_ID = 1450107538019192832
+    channel = bot.get_channel(LEVEL_UP_CHANNEL_ID)
     if channel:
         try:
             await channel.send(content=f"<@{user_id}>", embed=embed)

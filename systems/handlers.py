@@ -122,27 +122,20 @@ async def on_message(message):
         print(f"  ↳ Skipped: Channel excluded from XP ({resolved_channel_id})")
         return
 
-    # Only award XP in tracked channels
-    if resolved_channel_id in XP_TRACK_SET:
-        print("  ↳ Channel is tracked for XP")
-        current_time = datetime.datetime.now(datetime.UTC)
-        
-        if user_id in message_cooldowns:
-            time_since_last = (current_time - message_cooldowns[user_id]).total_seconds()
-            if time_since_last < MESSAGE_COOLDOWN:
-                print(f"  ↳ Cooldown active ({MESSAGE_COOLDOWN - time_since_last:.0f}s remaining)")
-                return
-        
-        message_cooldowns[user_id] = current_time
-        base_mult = get_channel_multiplier(resolved_channel_id)
-        print(f"  ↳ ✅ Adding 10 XP to {message.author.name} (channel mult {base_mult}x)")
-        await add_xp(message.author.id, 10, member=message.author, base_multiplier=base_mult)
-    else:
-        event_channels = [EVENT_PHASE2_CHANNEL_ID, EVENT_PHASE3_SUCCESS_CHANNEL_ID, EVENT_PHASE3_FAILED_CHANNEL_ID]
-        if resolved_channel_id in event_channels:
-            print(f"  ↳ Channel not tracked for XP (event channel - XP tracking disabled)")
-        else:
-            print(f"  ↳ Channel not tracked for XP (ID not in XP_TRACK_SET)")
+    # Award XP in ALL channels (except excluded ones and bot commands)
+    # Bot commands are already excluded above, so award XP for all other messages
+    current_time = datetime.datetime.now(datetime.UTC)
+    
+    if user_id in message_cooldowns:
+        time_since_last = (current_time - message_cooldowns[user_id]).total_seconds()
+        if time_since_last < MESSAGE_COOLDOWN:
+            print(f"  ↳ Cooldown active ({MESSAGE_COOLDOWN - time_since_last:.0f}s remaining)")
+            return
+    
+    message_cooldowns[user_id] = current_time
+    base_mult = get_channel_multiplier(resolved_channel_id)
+    print(f"  ↳ ✅ Adding 10 XP to {message.author.name} (channel mult {base_mult}x)")
+    await add_xp(message.author.id, 10, member=message.author, base_multiplier=base_mult)
 
 async def on_voice_state_update(member, before, after):
     """Handle voice state updates - track VC time and Event 2 participation"""
