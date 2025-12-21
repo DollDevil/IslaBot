@@ -476,10 +476,16 @@ def register_commands(bot_instance):
             return
         
         level = get_level(user_id)
-        base_daily = min(500, int(100 + (level * 4.5)))
-        level_bonus = 100 if level >= 100 else 0
-        daily_amount = base_daily + level_bonus
         
+        # Base amount is always 100 coins
+        base_daily = 100
+        
+        # Level bonus: level * 4.5, but total (base + level bonus) is capped at 500
+        level_bonus_amount = int(level * 4.5)
+        max_total_with_level = 500
+        level_bonus_amount = min(level_bonus_amount, max_total_with_level - base_daily)
+        
+        # Check for weekend bonus
         uk_tz = get_timezone("Europe/London")
         if uk_tz:
             if USE_PYTZ:
@@ -488,19 +494,23 @@ def register_commands(bot_instance):
                 now_uk = datetime.datetime.now(uk_tz)
             weekday = now_uk.weekday()
             if weekday >= 4:  # Friday (4), Saturday (5), Sunday (6)
-                daily_amount += 25
                 weekend_bonus = True
             else:
                 weekend_bonus = False
         else:
             weekend_bonus = False
         
+        # Calculate total daily amount
+        daily_amount = base_daily + level_bonus_amount
+        if weekend_bonus:
+            daily_amount += 25
+        
         add_coins(user_id, daily_amount)
         update_daily_cooldown(user_id)
         save_xp_data()
         
         # Format level bonus field
-        level_bonus_text = f"+{level_bonus} coins" if level_bonus > 0 else "❌ No Bonus"
+        level_bonus_text = f"+{level_bonus_amount} coins" if level_bonus_amount > 0 else "❌ No Bonus"
         
         # Format weekend bonus field
         weekend_bonus_text = "✅ +25 coins" if weekend_bonus else "❌ Not Active"

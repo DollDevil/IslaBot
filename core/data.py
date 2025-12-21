@@ -296,15 +296,41 @@ def get_uk_6pm_timestamp():
 def check_daily_cooldown(user_id):
     """Check if user can claim daily. Returns (on_cooldown, reset_timestamp)."""
     reset_timestamp = get_uk_6pm_timestamp()
+    
+    # If user has never claimed, they can claim
     if user_id not in daily_cooldowns:
         return False, reset_timestamp
+    
     last_claim = daily_cooldowns[user_id]
     now = datetime.datetime.now(datetime.UTC)
-    if now >= last_claim + datetime.timedelta(days=1):
-        uk_tz = datetime.timezone(datetime.timedelta(hours=0))
-        uk_now = datetime.datetime.now(uk_tz)
-        if uk_now.hour >= 18:
-            return False, reset_timestamp
+    
+    # Get UK timezone for proper day checking
+    uk_tz = datetime.timezone(datetime.timedelta(hours=0))
+    uk_now = datetime.datetime.now(uk_tz)
+    
+    # Convert last_claim to UK time (it's stored in UTC)
+    last_claim_utc = last_claim.replace(tzinfo=datetime.timezone.utc)
+    uk_last_claim = last_claim_utc.astimezone(uk_tz)
+    
+    # Calculate which "day" each claim is on (day starts at 6pm)
+    # If time is before 6pm, it's still the previous day for reset purposes
+    def get_reset_day(dt):
+        """Get the reset day for a datetime. Day resets at 6pm."""
+        if dt.hour < 18:
+            # Before 6pm, this is still the previous reset day
+            return (dt - datetime.timedelta(days=1)).date()
+        else:
+            # After 6pm, this is the current reset day
+            return dt.date()
+    
+    last_reset_day = get_reset_day(uk_last_claim)
+    current_reset_day = get_reset_day(uk_now)
+    
+    # If it's a different reset day, can claim
+    if current_reset_day > last_reset_day:
+        return False, reset_timestamp
+    
+    # Otherwise, still on cooldown
     return True, reset_timestamp
 
 def update_daily_cooldown(user_id):
