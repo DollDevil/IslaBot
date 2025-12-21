@@ -59,6 +59,8 @@ def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: 
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
         embed.add_field(name="Level", value="\n".join(level_lines), inline=True)
         embed.add_field(name="XP", value="\n".join(xp_lines), inline=True)
+    else:
+        embed.description = "No users found on this page."
     
     embed.add_field(name="\u200b", value="", inline=False)
     
@@ -112,6 +114,8 @@ def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: i
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
         embed.add_field(name="Coins", value="\n".join(coins_lines), inline=True)
         embed.add_field(name="Spent", value="\n".join(spent_lines), inline=True)
+    else:
+        embed.description = "No users found on this page."
     
     embed.add_field(name="\u200b", value="", inline=False)
     
@@ -168,6 +172,8 @@ def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
         embed.add_field(name="Messages", value="\n".join(messages_lines), inline=True)
         embed.add_field(name="Voice Chat Time", value="\n".join(vc_time_lines), inline=True)
+    else:
+        embed.description = "No users found on this page."
     
     embed.add_field(name="\u200b", value="", inline=False)
     
@@ -187,11 +193,11 @@ class LeaderboardView(discord.ui.View):
     
     def __init__(self, sorted_users, embed_builder, users_per_page: int = 20, timeout: float = 300.0):
         super().__init__(timeout=timeout)
-        self.sorted_users = sorted_users
+        self.sorted_users = sorted_users or []
         self.embed_builder = embed_builder
         self.users_per_page = users_per_page
         self.current_page = 0
-        self.max_pages = (len(sorted_users) + users_per_page - 1) // users_per_page if sorted_users else 1
+        self.max_pages = max(1, (len(self.sorted_users) + users_per_page - 1) // users_per_page) if self.sorted_users else 1
         self._init_button_states()
     
     def _init_button_states(self):
@@ -220,8 +226,12 @@ class LeaderboardView(discord.ui.View):
         if self.current_page > 0:
             self.current_page -= 1
             self.update_buttons()
-            embed = self.embed_builder(self.sorted_users, page=self.current_page, users_per_page=self.users_per_page)
-            await interaction.response.edit_message(embed=embed, view=self)
+            try:
+                embed = self.embed_builder(self.sorted_users, page=self.current_page, users_per_page=self.users_per_page)
+                await interaction.response.edit_message(embed=embed, view=self)
+            except Exception as e:
+                print(f"Error updating leaderboard page: {e}")
+                await interaction.response.defer()
         else:
             await interaction.response.defer()
     
@@ -231,8 +241,12 @@ class LeaderboardView(discord.ui.View):
         if self.current_page < self.max_pages - 1:
             self.current_page += 1
             self.update_buttons()
-            embed = self.embed_builder(self.sorted_users, page=self.current_page, users_per_page=self.users_per_page)
-            await interaction.response.edit_message(embed=embed, view=self)
+            try:
+                embed = self.embed_builder(self.sorted_users, page=self.current_page, users_per_page=self.users_per_page)
+                await interaction.response.edit_message(embed=embed, view=self)
+            except Exception as e:
+                print(f"Error updating leaderboard page: {e}")
+                await interaction.response.defer()
         else:
             await interaction.response.defer()
     
