@@ -114,7 +114,7 @@ async def send_daily_check_throne(guild):
         description=f"{random.choice(description_variants)}\n\n[Buy Coffee](https://throne.com/lsla/item/1230a476-4752-4409-9583-9313e60686fe)",
         color=0xa0b964,
     )
-    embed.set_thumbnail(url="https://i.imgur.com/F2RpiGq.png")
+    embed.set_thumbnail(url="https://i.imgur.com/gSoHGEN.png")
     embed.set_footer(text="I remember who takes care of me.")
     
     try:
