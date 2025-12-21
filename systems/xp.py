@@ -51,7 +51,7 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
         multiplier = calculate_xp_multiplier(member)
         amount = int(amount * base_multiplier * multiplier)
         if multiplier > 1.0 or base_multiplier != 1.0:
-            print(f"  Γå│ Applied {base_multiplier * multiplier:.1f}x multiplier ({amount} XP total)")
+            print(f"  -> Applied {base_multiplier * multiplier:.1f}x multiplier ({amount} XP total)")
     else:
         amount = int(amount * base_multiplier)
     
@@ -66,7 +66,7 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
         coins_earned = amount // 10
         if coins_earned > 0:
             add_coins(user_id, coins_earned)
-            print(f"  Γå│ Awarded {coins_earned} coins ({amount} XP / 10)")
+            print(f"  -> Awarded {coins_earned} coins ({amount} XP / 10)")
 
     current_level = xp_data[uid]["level"]
     next_level_xp = next_level_requirement(current_level)
@@ -80,7 +80,7 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
         if new_level in LEVEL_COIN_BONUSES:
             bonus_coins = LEVEL_COIN_BONUSES[new_level]
             add_coins(user_id, bonus_coins)
-            print(f"  Γå│ Level {new_level} bonus: {bonus_coins} coins")
+            print(f"  -> Level {new_level} bonus: {bonus_coins} coins")
         
         if member:
             await update_roles_on_level(member, new_level)

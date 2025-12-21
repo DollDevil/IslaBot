@@ -133,14 +133,14 @@ async def on_ready():
         # Print scheduled times for each tier
         for tier, scheduled_times in EVENT_SCHEDULE.items():
             times_str = ", ".join([f"{h:02d}:{m:02d}" for h, m in scheduled_times])
-            print(f"ΓÅ▒∩╕Å Tier {tier} events scheduled at: {times_str} UK time")
+            print(f"[*] Tier {tier} events scheduled at: {times_str} UK time")
         
         # Print Daily Check scheduled times
-        print(f"≡ƒôï Daily Check messages scheduled at: 19:00 (Throne), 20:00 (Slots), 22:00 (Daily) UK time")
+        print(f"[*] Daily Check messages scheduled at: 19:00 (Throne), 20:00 (Slots), 22:00 (Daily) UK time")
         
-        print(f"≡ƒôà Current UK time: {now_uk.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        print(f"[*] Current UK time: {now_uk.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     else:
-        print("ΓÜá∩╕Å WARNING: Timezone support not available. Event scheduling may not work correctly.")
+        print("[!] WARNING: Timezone support not available. Event scheduling may not work correctly.")
     
     # Set initial 30-minute cooldown to prevent events from starting immediately
     events.event_cooldown_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1800)
@@ -159,9 +159,9 @@ async def on_ready():
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
-        print(f"Γ£à Synced {len(synced)} slash command(s)")
+        print(f"[+] Synced {len(synced)} slash command(s)")
     except Exception as e:
-        print(f"Γ¥î Failed to sync slash commands: {e}")
+        print(f"[-] Failed to sync slash commands: {e}")
 
 # Bot login
 TOKEN = os.getenv('DISCORD_TOKEN')
