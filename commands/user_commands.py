@@ -288,8 +288,8 @@ def register_commands(bot_instance):
         
         if lb_type == "levels":
             sorted_users = sorted(filtered_xp_data.items(), key=lambda x: x[1].get("xp", 0), reverse=True)
-            embed = build_levels_leaderboard_embed(sorted_users, page=0, users_per_page=10)
-            view = LeaderboardView(sorted_users, build_levels_leaderboard_embed, users_per_page=10)
+            embed = build_levels_leaderboard_embed(sorted_users, page=0, users_per_page=20)
+            view = LeaderboardView(sorted_users, build_levels_leaderboard_embed, users_per_page=20)
             
             try:
                 if int(interaction.channel.id) in ALLOWED_SEND_SET:
@@ -306,8 +306,8 @@ def register_commands(bot_instance):
             
         elif lb_type == "coins":
             sorted_users = sorted(filtered_xp_data.items(), key=lambda x: x[1].get("coins", 0), reverse=True)
-            embed = build_coins_leaderboard_embed(sorted_users, page=0, users_per_page=10)
-            view = LeaderboardView(sorted_users, build_coins_leaderboard_embed, users_per_page=10)
+            embed = build_coins_leaderboard_embed(sorted_users, page=0, users_per_page=20)
+            view = LeaderboardView(sorted_users, build_coins_leaderboard_embed, users_per_page=20)
             
             try:
                 if int(interaction.channel.id) in ALLOWED_SEND_SET:
@@ -328,8 +328,8 @@ def register_commands(bot_instance):
                 key=lambda x: (x[1].get("messages_sent", 0) + x[1].get("vc_minutes", 0)),
                 reverse=True
             )
-            embed = build_activity_leaderboard_embed(sorted_users, page=0, users_per_page=10)
-            view = LeaderboardView(sorted_users, build_activity_leaderboard_embed, users_per_page=10)
+            embed = build_activity_leaderboard_embed(sorted_users, page=0, users_per_page=20)
+            view = LeaderboardView(sorted_users, build_activity_leaderboard_embed, users_per_page=20)
             
             try:
                 if int(interaction.channel.id) in ALLOWED_SEND_SET:

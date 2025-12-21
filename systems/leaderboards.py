@@ -20,7 +20,7 @@ def format_placement(place: int) -> str:
     else:
         return f"{place}th"
 
-def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 10):
+def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 20):
     """Build levels leaderboard embed with pagination support."""
     embed = discord.Embed(
         title="💋 Levels Leaderboard",
@@ -43,15 +43,19 @@ def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: 
             placement_lines.append(f"{idx}. <@{user_id}>")
             level_lines.append(str(level))
             xp_lines.append(str(xp))
-        except Exception:
+        except Exception as e:
+            print(f"Error processing user {user_id} in levels leaderboard: {e}")
             continue
     
-    min_length = min(len(placement_lines), len(level_lines), len(xp_lines))
-    if min_length > 0:
+    # Ensure all arrays are the same length (they should be, but double-check)
+    expected_length = len(placement_lines)
+    if len(level_lines) != expected_length or len(xp_lines) != expected_length:
+        min_length = min(len(placement_lines), len(level_lines), len(xp_lines))
         placement_lines = placement_lines[:min_length]
         level_lines = level_lines[:min_length]
         xp_lines = xp_lines[:min_length]
-        
+    
+    if len(placement_lines) > 0:
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
         embed.add_field(name="Level", value="\n".join(level_lines), inline=True)
         embed.add_field(name="XP", value="\n".join(xp_lines), inline=True)
@@ -69,7 +73,7 @@ def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: 
     
     return embed
 
-def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 10):
+def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 20):
     """Build coins leaderboard embed with pagination support."""
     embed = discord.Embed(
         title="💵 Coin Leaderboard",
@@ -92,15 +96,19 @@ def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: i
             placement_lines.append(f"{idx}. <@{user_id}>")
             coins_lines.append(str(coins))
             spent_lines.append(str(total_spent))
-        except Exception:
+        except Exception as e:
+            print(f"Error processing user {user_id} in coins leaderboard: {e}")
             continue
     
-    min_length = min(len(placement_lines), len(coins_lines), len(spent_lines))
-    if min_length > 0:
+    # Ensure all arrays are the same length (they should be, but double-check)
+    expected_length = len(placement_lines)
+    if len(coins_lines) != expected_length or len(spent_lines) != expected_length:
+        min_length = min(len(placement_lines), len(coins_lines), len(spent_lines))
         placement_lines = placement_lines[:min_length]
         coins_lines = coins_lines[:min_length]
         spent_lines = spent_lines[:min_length]
-        
+    
+    if len(placement_lines) > 0:
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
         embed.add_field(name="Coins", value="\n".join(coins_lines), inline=True)
         embed.add_field(name="Spent", value="\n".join(spent_lines), inline=True)
@@ -118,7 +126,7 @@ def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: i
     
     return embed
 
-def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 10):
+def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 20):
     """Build activity leaderboard embed with pagination support."""
     embed = discord.Embed(
         title="🎀 Activity Leaderboard",
@@ -144,15 +152,19 @@ def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page
             placement_lines.append(f"{idx}. <@{user_id}>")
             messages_lines.append(f"💬 {messages_sent}")
             vc_time_lines.append(f"🎙️ {vc_time_str}")
-        except Exception:
+        except Exception as e:
+            print(f"Error processing user {user_id} in activity leaderboard: {e}")
             continue
     
-    min_length = min(len(placement_lines), len(messages_lines), len(vc_time_lines))
-    if min_length > 0:
+    # Ensure all arrays are the same length (they should be, but double-check)
+    expected_length = len(placement_lines)
+    if len(messages_lines) != expected_length or len(vc_time_lines) != expected_length:
+        min_length = min(len(placement_lines), len(messages_lines), len(vc_time_lines))
         placement_lines = placement_lines[:min_length]
         messages_lines = messages_lines[:min_length]
         vc_time_lines = vc_time_lines[:min_length]
-        
+    
+    if len(placement_lines) > 0:
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
         embed.add_field(name="Messages", value="\n".join(messages_lines), inline=True)
         embed.add_field(name="Voice Chat Time", value="\n".join(vc_time_lines), inline=True)
@@ -173,7 +185,7 @@ def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page
 class LeaderboardView(discord.ui.View):
     """View with pagination buttons for leaderboard."""
     
-    def __init__(self, sorted_users, embed_builder, users_per_page: int = 10, timeout: float = 300.0):
+    def __init__(self, sorted_users, embed_builder, users_per_page: int = 20, timeout: float = 300.0):
         super().__init__(timeout=timeout)
         self.sorted_users = sorted_users
         self.embed_builder = embed_builder
