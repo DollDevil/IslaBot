@@ -251,19 +251,28 @@ async def gamble(interaction: discord.Interaction, bet: int):
         add_coins(user_id, bet)
         save_xp_data()
         
+        win_messages = [
+            "Huh… look at that.\nLuck actually noticed you this time.",
+            "Interesting.\nYou pulled that off better than I expected.",
+            "Well well…\nEven you can surprise me sometimes.",
+            "Looks like luck leaned your way.\nJust this once.",
+            "Cute.\nYou look proud — don't worry, I'll allow it.",
+            "That worked out for you.\nI wonder if you can do it again.",
+            "A win.\nNot bad… I might even be impressed.",
+            "Looks like the game was kind to you.\nYou should thank me for that.",
+        ]
+        
+        embed = discord.Embed(
+            title="🎉 You Won",
+            description=random.choice(win_messages),
+            color=0x4ec200,
+        )
+        embed.set_thumbnail(url="https://i.imgur.com/VdlEKfp.png")
+        embed.set_footer(text=f"✅ {bet} coins.")
+        await interaction.followup.send(embed=embed)
+        
+        # Big bet bonus: send DM with image
         if is_big_bet:
-            win_messages = [
-                "Interesting. You actually won. DMs.",
-                "Huh. Even you pulled it off. Check your DMs.",
-                "Lucky. Check your DMs before I change my mind.",
-            ]
-            embed = discord.Embed(
-                title=f"Won {bet} Coins",
-                description=f"*{random.choice(win_messages)}*",
-                color=0x1bbe19,
-            )
-            await interaction.followup.send(embed=embed)
-            
             try:
                 user = await bot.fetch_user(user_id)
                 image_variations = [
@@ -282,53 +291,29 @@ async def gamble(interaction: discord.Interaction, bet: int):
                 await user.send(embed=dm_embed)
             except:
                 pass
-        else:
-            win_messages = [
-                "You won something. Don't get used to it.",
-                "Huh. You actually won.",
-                "Even you can win sometimes.",
-                "A win. We'll see how long it lasts.",
-            ]
-            embed = discord.Embed(
-                title=f"Won {bet} Coins",
-                description=f"*{random.choice(win_messages)}*",
-                color=0x1bbe19,
-            )
-            await interaction.followup.send(embed=embed)
     else:
         add_coins(user_id, -bet)
         save_xp_data()
         
-        if is_big_bet:
-            loss_messages = [
-                "That was a lot to lose.\nSit with it.",
-                "Gone.\nAll of it.",
-                "You felt confident a moment ago.\nInteresting.",
-                "That silence after losing… I like it.",
-            ]
-            embed = discord.Embed(
-                title=f"Lost {bet} Coins",
-                description=f"*{random.choice(loss_messages)}*",
-                color=0xaf0808,
-            )
-            await interaction.followup.send(embed=embed)
-        else:
-            loss_messages = [
-                "You lost. That was predictable.",
-                "No luck this time. Try again.",
-                "Unlucky. That didn't go your way.",
-                "Loss. But you seem used to that.",
-                "That didn't work out. Again?",
-                "Loss confirmed. What's your next move?",
-                "You lost. Surely you won't stop now.",
-                "No reward this time. Go again.",
-            ]
-            embed = discord.Embed(
-                title=f"Lost {bet} Coins",
-                description=f"*{random.choice(loss_messages)}*",
-                color=0xaf0808,
-            )
-            await interaction.followup.send(embed=embed)
+        loss_messages = [
+            "You really thought luck was on your side this time?\nThat was cute.",
+            "It's alright—loss looks good on you too.\nKeeps you humble.",
+            "You took a chance for me—and failed.\nI won't say I'm surprised.",
+            "Luck didn't land this time.\nMaybe the next round treats you better.",
+            "Not a win this time.\nYou can always try again when you're ready.",
+            "No win this round.\nThe game's still waiting for you though.",
+            "No payout this time.\nYou'll get it eventually—if you keep playing.",
+            "Didn't hit.\nBut I like that you tried.",
+        ]
+        
+        embed = discord.Embed(
+            title="💔 Lost Gamble",
+            description=random.choice(loss_messages),
+            color=0xa80000,
+        )
+        embed.set_thumbnail(url="https://i.imgur.com/EuS7WME.png")
+        embed.set_footer(text=f"❌ {bet} coins.")
+        await interaction.followup.send(embed=embed)
 
 async def dice(interaction: discord.Interaction, bet: int):
     """Roll dice - win if your roll > dealer roll."""
