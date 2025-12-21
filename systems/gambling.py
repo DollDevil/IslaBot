@@ -268,7 +268,7 @@ async def gamble(interaction: discord.Interaction, bet: int):
             color=0x4ec200,
         )
         embed.set_thumbnail(url="https://i.imgur.com/VdlEKfp.png")
-        embed.set_footer(text=f"+{bet} coins")
+        embed.set_footer(text=f"✅ +{bet} coins")
         await interaction.followup.send(embed=embed)
         
         # Big bet bonus: send DM with image
@@ -312,7 +312,7 @@ async def gamble(interaction: discord.Interaction, bet: int):
             color=0xa80000,
         )
         embed.set_thumbnail(url="https://i.imgur.com/EuS7WME.png")
-        embed.set_footer(text=f"-{bet} coins")
+        embed.set_footer(text=f"❌ -{bet} coins")
         await interaction.followup.send(embed=embed)
 
 async def dice(interaction: discord.Interaction, bet: int):
