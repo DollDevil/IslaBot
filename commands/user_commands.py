@@ -424,9 +424,18 @@ def register_commands(bot_instance):
             return
         
         user_id = interaction.user.id
+        user = interaction.user
         coins = get_coins(user_id)
         level = get_level(user_id)
         
+        # Get user's display name (nickname if available, otherwise username)
+        display_name = user.display_name if hasattr(user, 'display_name') else user.name
+        
+        # Check if daily has been claimed
+        on_cooldown, reset_timestamp = check_daily_cooldown(user_id)
+        daily_status = "✅ Claimed" if on_cooldown else "❌ Not Claimed"
+        
+        # Find next bonus level
         next_bonus_level = None
         for bonus_level in sorted(LEVEL_COIN_BONUSES.keys()):
             if bonus_level > level:
@@ -436,12 +445,14 @@ def register_commands(bot_instance):
         next_bonus_text = f"Level {next_bonus_level} ({LEVEL_COIN_BONUSES[next_bonus_level]} coins)" if next_bonus_level else "Max level reached"
         
         embed = discord.Embed(
-            title="Balance",
-            description=f"Coins: **{coins}**\n",
-            color=0xff000d,
+            title=f"{display_name}'s Total Balance",
+            description=f"{coins} coins.\n\u200b",
+            color=0xff9d14,
         )
-        embed.add_field(name="Current Level:", value=str(level), inline=True)
-        embed.add_field(name="Next Level Bonus:", value=next_bonus_text, inline=True)
+        embed.add_field(name="Next Bonus", value=next_bonus_text, inline=True)
+        embed.add_field(name="Daily Coins", value=daily_status, inline=True)
+        embed.set_thumbnail(url="https://i.imgur.com/yYBNX08.png")
+        embed.set_footer(text="Use /daily to claim free coins.")
         
         await interaction.response.send_message(embed=embed)
     
