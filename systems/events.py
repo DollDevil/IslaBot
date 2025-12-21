@@ -294,7 +294,7 @@ async def end_event7_phase3(state):
 # Import send_tier3_pre_announcement from tasks (circular import handled)
 def _get_send_tier3_pre_announcement():
     """Lazy import to avoid circular dependency"""
-    from tasks import send_tier3_pre_announcement
+    from systems.tasks import send_tier3_pre_announcement
     return send_tier3_pre_announcement
 
 async def start_obedience_event(ctx_or_guild, event_type: int, channel=None):

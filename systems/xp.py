@@ -135,7 +135,7 @@ async def send_level_up_message(user_id):
     quote_text = quotes.get(level, "Keep progressingΓÇª")
 
     # Get level role (milestone)
-    from config import LEVEL_ROLE_MAP
+    from core.config import LEVEL_ROLE_MAP
     level_role = "None"
     for lvl, role_id in sorted(LEVEL_ROLE_MAP.items(), reverse=True):
         if level >= lvl:
@@ -162,7 +162,7 @@ async def send_level_up_message(user_id):
     embed.add_field(name="Message from Isla <:kisses:1449998044446593125>", value=quote_text, inline=False)
 
     # Send level-up message only to the specified channel
-    from config import ALLOWED_SEND_CHANNELS
+    from core.config import ALLOWED_SEND_CHANNELS
     level_up_channel_id = ALLOWED_SEND_CHANNELS[0]  # First channel is level up messages
     channel = bot.get_channel(level_up_channel_id)
     if channel:

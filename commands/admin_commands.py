@@ -210,7 +210,7 @@ def register_commands(bot_instance):
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
         
-        from tasks import send_daily_check_throne
+        from systems.tasks import send_daily_check_throne
         success = await send_daily_check_throne(interaction.guild)
         if success:
             await interaction.response.send_message("✅ Throne message sent!", ephemeral=True, delete_after=5)
@@ -220,7 +220,7 @@ def register_commands(bot_instance):
     @bot.tree.command(name="killevent", description="Kill any currently running event and set a 30-minute cooldown. Admin only.")
     async def killevent(interaction: discord.Interaction):
         """Kill any currently running event and set a 30-minute cooldown."""
-        import events
+        import systems.events as events
         
         if not await check_admin_command_permissions(interaction):
             return
@@ -258,7 +258,7 @@ def register_commands(bot_instance):
     @bot.tree.command(name="stopevents", description="Stop or start events from running. Admin only.")
     async def stopevents(interaction: discord.Interaction):
         """Stop or start events from running."""
-        import events
+        import systems.events as events
         
         if not await check_admin_command_permissions(interaction):
             return
@@ -322,7 +322,7 @@ def register_commands(bot_instance):
             await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
-        from data import get_level
+        from core.data import get_level
         updated_count = 0
         for member in guild.members:
             if member.bot or any(int(r.id) in EXCLUDED_ROLE_SET for r in member.roles):
@@ -430,7 +430,7 @@ def register_commands(bot_instance):
             inline=False
         )
         
-        import events
+        import systems.events as events
         if events.active_event:
             event_type = events.active_event.get("type", "Unknown")
             embed.add_field(
