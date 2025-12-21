@@ -97,7 +97,23 @@ async def on_message(message):
     # Obedience event tracking - process BEFORE exclusion checks so event messages work in any channel
     await handle_event_message(message)
 
-    # Skip excluded categories
+    # Track messages sent for ALL channels (excluding bot commands)
+    # This happens before XP exclusion checks so all messages are counted
+    user_id = message.author.id
+    is_bot_command = message.content.startswith('!') or (message.content.startswith('/') and len(message.content) > 1)
+    if not is_bot_command:
+        uid = str(user_id)
+        # Optimization: Use default data template
+        from core.data import _DEFAULT_USER_DATA, _user_data_cache
+        if uid not in xp_data:
+            xp_data[uid] = _DEFAULT_USER_DATA.copy()
+            _user_data_cache[uid] = xp_data[uid]
+        user_data = xp_data[uid]
+        user_data["messages_sent"] = user_data.get("messages_sent", 0) + 1
+        _user_data_cache[uid] = user_data
+        print(f"  ↳ Tracked message count for {message.author.name}")
+
+    # Skip excluded categories for XP gain
     category_id = resolve_category_id(message.channel)
     if category_id in NON_XP_CATEGORY_IDS:
         print(f"  ↳ Skipped: Category excluded from XP ({category_id})")
@@ -106,23 +122,10 @@ async def on_message(message):
         print(f"  ↳ Skipped: Channel excluded from XP ({resolved_channel_id})")
         return
 
+    # Only award XP in tracked channels
     if resolved_channel_id in XP_TRACK_SET:
-        print("  ↳ Channel is tracked")
-        user_id = message.author.id
+        print("  ↳ Channel is tracked for XP")
         current_time = datetime.datetime.now(datetime.UTC)
-        
-        # Track messages sent (excluding bot commands)
-        is_bot_command = message.content.startswith('!') or (message.content.startswith('/') and len(message.content) > 1)
-        if not is_bot_command:
-            uid = str(user_id)
-            # Optimization: Use default data template
-            from core.data import _DEFAULT_USER_DATA, _user_data_cache
-            if uid not in xp_data:
-                xp_data[uid] = _DEFAULT_USER_DATA.copy()
-                _user_data_cache[uid] = xp_data[uid]
-            user_data = xp_data[uid]
-            user_data["messages_sent"] = user_data.get("messages_sent", 0) + 1
-            _user_data_cache[uid] = user_data
         
         if user_id in message_cooldowns:
             time_since_last = (current_time - message_cooldowns[user_id]).total_seconds()
@@ -137,9 +140,9 @@ async def on_message(message):
     else:
         event_channels = [EVENT_PHASE2_CHANNEL_ID, EVENT_PHASE3_SUCCESS_CHANNEL_ID, EVENT_PHASE3_FAILED_CHANNEL_ID]
         if resolved_channel_id in event_channels:
-            print(f"  ↳ Channel not tracked (event channel - XP tracking disabled)")
+            print(f"  ↳ Channel not tracked for XP (event channel - XP tracking disabled)")
         else:
-            print(f"  ↳ Channel not tracked (ID mismatch)")
+            print(f"  ↳ Channel not tracked for XP (ID not in XP_TRACK_SET)")
 
 async def on_voice_state_update(member, before, after):
     """Handle voice state updates - track VC time and Event 2 participation"""
