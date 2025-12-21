@@ -242,14 +242,14 @@ class LeaderboardView(discord.ui.View):
         
         embed = discord.Embed(
             title="[ ✧ ]",
-            description="𝙿𝚛𝚘𝚐𝚛𝚎𝚜𝚜 𝙻𝚘𝚐\n᲼᲼",
+            description="𝙿𝚛𝚘𝚐𝚛𝚎𝚜𝚜 𝙻𝚘𝚐",
             color=0xff000d
         )
         embed.add_field(name="User", value=f"<@{user_id}>", inline=True)
         embed.add_field(name="Level", value=f"{level}", inline=True)
         embed.add_field(name="XP", value=f"{xp}/{next_level_xp}", inline=True)
         embed.add_field(name="Next Level", value=f"{xp_needed} XP needed", inline=False)
-        embed.add_field(name="᲼᲼", value=f"𝙼𝚎𝚜𝚜𝚊𝚐𝚎 𝚁𝚎𝚌𝚎𝚒𝚟𝚎𝚍\n*{random.choice(messages)}*", inline=False)
+        embed.add_field(name="\u200b", value=f"𝙼𝚎𝚜𝚜𝚊𝚐𝚎 𝚁𝚎𝚌𝚎𝚒𝚟𝚎𝚍\n*{random.choice(messages)}*", inline=False)
         
         await interaction.response.send_message(content=f"<@{user_id}>", embed=embed, ephemeral=True)
 
