@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 import datetime
 
-from config import (
+from core.config import (
     REPLY_CHANNEL_ID, EVENT_PHASE2_CHANNEL_ID, EVENT_PHASE2_ALLOWED_ROLE,
     EVENT_PHASE3_SUCCESS_CHANNEL_ID, EVENT_PHASE3_SUCCESS_ROLES,
     EVENT_PHASE3_FAILED_CHANNEL_ID, EVENT_PHASE3_FAILED_ROLES,
@@ -13,10 +13,10 @@ from config import (
     EXCLUDED_ROLE_SET, VC_XP_TRACK_CHANNELS, VC_XP, MESSAGE_COOLDOWN,
     ALLOWED_GUILDS
 )
-from data import xp_data, save_xp_data
-from xp import add_xp
-from utils import resolve_channel_id, resolve_category_id, get_channel_multiplier, get_reply_quote
-from events import active_event, handle_event_message, handle_event_reaction
+from core.data import xp_data, save_xp_data
+from systems.xp import add_xp
+from core.utils import resolve_channel_id, resolve_category_id, get_channel_multiplier, get_reply_quote
+from systems.events import active_event, handle_event_message, handle_event_reaction
 
 # Global state
 message_cooldowns = {}

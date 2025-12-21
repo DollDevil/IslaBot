@@ -6,15 +6,15 @@ from discord.ext import tasks
 import datetime
 import random
 
-from config import (
+from core.config import (
     EVENT_CHANNEL_ID, EVENT_SCHEDULE, EVENT_TIER_MAP, VC_XP,
     VC_XP_TRACK_CHANNELS, NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS,
     EXCLUDED_ROLE_SET, USER_COMMAND_CHANNEL_ID
 )
-from data import xp_data, save_xp_data
-from xp import add_xp
-from utils import resolve_category_id, get_channel_multiplier, get_timezone, USE_PYTZ
-from events import active_event, start_obedience_event, events_enabled
+from core.data import xp_data, save_xp_data
+from systems.xp import add_xp
+from core.utils import resolve_category_id, get_channel_multiplier, get_timezone, USE_PYTZ
+from systems.events import active_event, start_obedience_event, events_enabled
 
 # Global state for tracking
 last_event_times_today = set()

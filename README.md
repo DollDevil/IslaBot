@@ -6,20 +6,26 @@ A modular Discord bot for Isla's server with leveling, events, gambling, and mor
 
 ```
 IslaBot/
-├── main.py                 # Entry point - wires all modules together
-├── config.py               # Configuration constants
-├── data.py                 # Data management (XP, coins, cooldowns)
-├── utils.py                # Utility functions
-├── xp.py                   # XP system
-├── events.py               # Event system
-├── leaderboards.py         # Leaderboard helpers
-├── gambling.py             # Gambling system
-├── tasks.py                # Scheduled tasks
-├── handlers.py             # Event handlers
+├── core/                   # Core bot files
+│   ├── main.py            # Entry point - wires all modules together
+│   ├── config.py          # Configuration constants
+│   ├── data.py            # Data management (XP, coins, cooldowns)
+│   └── utils.py           # Utility functions
+├── systems/                # Feature systems
+│   ├── xp.py              # XP system
+│   ├── events.py          # Event system
+│   ├── leaderboards.py    # Leaderboard helpers
+│   ├── gambling.py        # Gambling system
+│   ├── tasks.py           # Scheduled tasks
+│   └── handlers.py        # Event handlers
 ├── commands/               # Command modules
 │   ├── __init__.py
 │   ├── user_commands.py    # User-facing commands
 │   └── admin_commands.py   # Admin commands
+├── scripts/                # Deployment scripts
+│   ├── deploy.ps1
+│   ├── quick-deploy.ps1
+│   └── git-push.ps1
 ├── docs/                   # Documentation
 ├── data/                   # Data files
 │   └── xp.json            # User XP data
@@ -41,7 +47,7 @@ IslaBot/
 
 3. Run the bot:
    ```bash
-   python main.py
+   python core/main.py
    ```
 
 ## Features

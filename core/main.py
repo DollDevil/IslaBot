@@ -1,4 +1,4 @@
-"""
+﻿"""
 Main entry point for IslaBot - wires together all modules
 # Auto-deployment test - remove this comment after testing
 """
@@ -9,23 +9,23 @@ import datetime
 from dotenv import load_dotenv
 
 # Import all modules
-from config import ALLOWED_GUILDS, EVENT_SCHEDULE
-from data import load_xp_data
-from utils import get_timezone, USE_PYTZ
-import events
-import handlers
-import tasks
+from core.config import ALLOWED_GUILDS, EVENT_SCHEDULE
+from core.data import load_xp_data
+from core.utils import get_timezone, USE_PYTZ
+import systems.events as events
+import systems.handlers as handlers
+import systems.tasks as tasks
 from commands import user_commands, admin_commands
-from xp import set_bot as set_xp_bot
-from utils import set_bot as set_utils_bot
-from events import set_bot as set_events_bot
-from tasks import set_bot as set_tasks_bot
+from systems.xp import set_bot as set_xp_bot
+from core.utils import set_bot as set_utils_bot
+from systems.events import set_bot as set_events_bot
+from systems.tasks import set_bot as set_tasks_bot
 
 # Load environment variables
 # Try loading from secret.env first (for local development)
 try:
     load_dotenv('secret.env')
-    print("✓ Loaded environment variables from secret.env")
+    print("Γ£ô Loaded environment variables from secret.env")
 except Exception as e:
     print(f"Note: Could not load secret.env file: {e}. Trying system environment variables...")
 
@@ -52,7 +52,7 @@ bot = commands.Bot(
 )
 
 # Set bot instance in all modules (must be done before registering commands/handlers)
-handlers.set_bot(bot)
+systems.handlers.set_bot(bot)
 set_tasks_bot(bot)
 set_xp_bot(bot)
 set_utils_bot(bot)
@@ -67,27 +67,27 @@ admin_commands.register_commands(bot)
 # Register event handlers
 @bot.event
 async def on_message(message):
-    await handlers.on_message(message)
+    await systems.handlers.on_message(message)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    await handlers.on_voice_state_update(member, before, after)
+    await systems.handlers.on_voice_state_update(member, before, after)
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    await handlers.on_raw_reaction_add(payload)
+    await systems.handlers.on_raw_reaction_add(payload)
 
 @bot.event
 async def on_command_error(ctx, error):
-    await handlers.on_command_error(ctx, error)
+    await systems.handlers.on_command_error(ctx, error)
 
 @bot.event
 async def on_guild_join(guild):
-    await handlers.on_guild_join(guild)
+    await systems.handlers.on_guild_join(guild)
 
 @bot.event
 async def on_member_remove(member):
-    await handlers.on_member_remove(member)
+    await systems.handlers.on_member_remove(member)
 
 @bot.event
 async def on_ready():
@@ -118,43 +118,42 @@ async def on_ready():
         today_str = now_uk.strftime("%Y-%m-%d")
         
         # Clear any old tracking data
-        from events import last_event_times_today
+        from systems.events import last_event_times_today
         last_event_times_today.clear()
-        tasks.last_daily_check_times_today.clear()
+        systems.tasks.last_daily_check_times_today.clear()
         
         # Print scheduled times for each tier
         for tier, scheduled_times in EVENT_SCHEDULE.items():
             times_str = ", ".join([f"{h:02d}:{m:02d}" for h, m in scheduled_times])
-            print(f"⏱️ Tier {tier} events scheduled at: {times_str} UK time")
+            print(f"ΓÅ▒∩╕Å Tier {tier} events scheduled at: {times_str} UK time")
         
         # Print Daily Check scheduled times
-        print(f"📋 Daily Check messages scheduled at: 19:00 (Throne), 20:00 (Slots), 22:00 (Daily) UK time")
+        print(f"≡ƒôï Daily Check messages scheduled at: 19:00 (Throne), 20:00 (Slots), 22:00 (Daily) UK time")
         
-        print(f"📅 Current UK time: {now_uk.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        print(f"≡ƒôà Current UK time: {now_uk.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     else:
-        print("⚠️ WARNING: Timezone support not available. Event scheduling may not work correctly.")
+        print("ΓÜá∩╕Å WARNING: Timezone support not available. Event scheduling may not work correctly.")
     
     # Set initial 30-minute cooldown to prevent events from starting immediately
-    import events
-    events.event_cooldown_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1800)
-    print(f"⏰ Initial event cooldown set: No events will start for 30 minutes (until {events.event_cooldown_until.strftime('%H:%M:%S UTC')})")
+    systems.events.event_cooldown_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1800)
+    print(f"⏰ Initial event cooldown set: No events will start for 30 minutes (until {systems.events.event_cooldown_until.strftime('%H:%M:%S UTC')})")
     
     # Clear event roles on startup (no events should be active)
-    await events.clear_event_roles()
+    await systems.events.clear_event_roles()
     
     # Start background tasks
-    tasks.award_vc_xp.start()
-    tasks.auto_save.start()
-    tasks.event_scheduler.start()
-    tasks.daily_check_scheduler.start()
+    systems.tasks.award_vc_xp.start()
+    systems.tasks.auto_save.start()
+    systems.tasks.event_scheduler.start()
+    systems.tasks.daily_check_scheduler.start()
     print("Background tasks started: VC XP tracking, auto-save, event scheduler, and Daily Check scheduler")
     
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Synced {len(synced)} slash command(s)")
+        print(f"Γ£à Synced {len(synced)} slash command(s)")
     except Exception as e:
-        print(f"❌ Failed to sync slash commands: {e}")
+        print(f"Γ¥î Failed to sync slash commands: {e}")
 
 # Bot login
 TOKEN = os.getenv('DISCORD_TOKEN')

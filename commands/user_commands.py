@@ -5,24 +5,24 @@ import discord
 from discord import app_commands
 import datetime
 
-from config import (
+from core.config import (
     USER_COMMAND_CHANNEL_ID, ALLOWED_SEND_SET, LEVEL_COIN_BONUSES,
     LEVEL_ROLE_MAP, EVENT_CHANNEL_ID
 )
-from data import (
+from core.data import (
     xp_data, get_coins, get_level, get_xp, add_coins, has_coins, save_xp_data,
     get_activity_quote
 )
-from utils import next_level_requirement, get_timezone, USE_PYTZ
-from leaderboards import (
+from core.utils import next_level_requirement, get_timezone, USE_PYTZ
+from systems.leaderboards import (
     build_levels_leaderboard_embed, build_coins_leaderboard_embed,
     build_activity_leaderboard_embed, LeaderboardView
 )
-from gambling import (
+from systems.gambling import (
     gamble, dice, slots_bet, slots_free, coinflip, allin,
     check_gambling_cooldown
 )
-from data import check_daily_cooldown, update_daily_cooldown, check_give_cooldown, update_give_cooldown
+from core.data import check_daily_cooldown, update_daily_cooldown, check_give_cooldown, update_give_cooldown
 
 # Bot instance (set by main.py)
 bot = None
@@ -275,7 +275,7 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
-        from data import xp_data
+        from core.data import xp_data
         
         guild = interaction.guild
         if guild:

@@ -3,9 +3,9 @@ Leaderboard system for displaying user rankings
 """
 import discord
 import random
-from data import xp_data, get_level, get_xp
-from utils import next_level_requirement
-from config import ALLOWED_SEND_SET
+from core.data import xp_data, get_level, get_xp
+from core.utils import next_level_requirement
+from core.config import ALLOWED_SEND_SET
 
 def format_placement(place: int) -> str:
     """Format placement number as ordinal (1st, 2nd, 3rd, etc.)"""

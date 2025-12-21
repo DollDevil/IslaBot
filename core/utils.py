@@ -28,7 +28,7 @@ except ImportError:
             def get_timezone(name):
                 return None
 
-from config import (
+from core.config import (
     XP_THRESHOLDS, CHANNEL_MULTIPLIERS, LEVEL_ROLE_MAP, EXCLUDED_ROLE_SET,
     REPLY_QUOTES, LEVEL_2_ROLE_ID, BETA_BOOST_SERVANT_ROLE_IDS,
     KITTEN_ROLE_ID, PUPPY_ROLE_ID, PET_ROLE_ID, DEVOTEE_ROLE_ID

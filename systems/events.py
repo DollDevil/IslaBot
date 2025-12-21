@@ -10,7 +10,7 @@ import re
 import os
 from discord import FFmpegPCMAudio
 
-from config import (
+from core.config import (
     EVENT_DURATION_SECONDS, EVENT_COOLDOWN_SECONDS, EVENT_CHANNEL_ID,
     EVENT_PHASE2_CHANNEL_ID, EVENT_PHASE3_FAILED_CHANNEL_ID, EVENT_PHASE3_SUCCESS_CHANNEL_ID,
     EVENT_2_VC_CHANNELS, EVENT_2_AUDIO, EVENT_REWARDS, EVENT_TIER_MAP,
@@ -18,9 +18,9 @@ from config import (
     EVENT_7_OPT_IN_ROLE, EVENT_7_SUCCESS_ROLE, EVENT_7_FAILED_ROLE,
     EVENT_CLEANUP_ROLES, COLLECTIVE_THRESHOLD, EXCLUDED_ROLE_SET
 )
-from data import increment_event_participation, xp_data
-from xp import add_xp
-from utils import resolve_channel_id
+from core.data import increment_event_participation, xp_data
+from systems.xp import add_xp
+from core.utils import resolve_channel_id
 
 # Global state
 active_event = None

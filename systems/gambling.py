@@ -9,8 +9,8 @@ import re
 import datetime
 import asyncio
 
-from config import EVENT_CHANNEL_ID
-from data import (
+from core.config import EVENT_CHANNEL_ID
+from core.data import (
     get_coins, add_coins, has_coins, save_xp_data,
     increment_gambling_attempt, increment_gambling_win, add_gambling_spent
 )

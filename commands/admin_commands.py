@@ -5,19 +5,19 @@ import discord
 from discord import app_commands
 import datetime
 
-from config import (
+from core.config import (
     ADMIN_COMMAND_CHANNEL_ID, ADMIN_ROLE_IDS, EVENT_CHANNEL_ID,
     XP_TRACK_SET, ALLOWED_SEND_SET, MULTIPLIER_ROLE_SET, EXCLUDED_ROLE_SET,
     NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS, CHANNEL_MULTIPLIERS,
     MESSAGE_COOLDOWN, VC_XP, EVENT_SCHEDULE, LEVEL_ROLE_MAP
 )
-from data import xp_data, get_level, get_xp, save_xp_data
-from utils import next_level_requirement, get_timezone, USE_PYTZ, update_roles_on_level
-from events import (
+from core.data import xp_data, get_level, get_xp, save_xp_data
+from core.utils import next_level_requirement, get_timezone, USE_PYTZ, update_roles_on_level
+from systems.events import (
     active_event, event_cooldown_until, events_enabled, start_obedience_event,
     clear_event_roles, build_event_embed, event_prompt
 )
-from tasks import get_next_scheduled_time
+from systems.tasks import get_next_scheduled_time
 
 # Bot instance (set by main.py)
 bot = None

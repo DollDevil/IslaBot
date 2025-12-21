@@ -21,7 +21,7 @@ Complete guide for deploying IslaBot to Wispbyte hosting.
    - Git repo address: Leave EMPTY
    - Git branch: Leave EMPTY
    - Auto update: OFF
-   - App py file: `main.py`
+   - App py file: `core/main.py`
    - Requirements file: `requirements.txt`
 
 4. **Start bot** - Dependencies install automatically
@@ -32,7 +32,7 @@ Complete guide for deploying IslaBot to Wispbyte hosting.
    - Git repo: `https://github.com/DollDevil/IslaBot.git`
    - Branch: `main`
    - Auto update: ON
-   - App py file: `main.py`
+   - App py file: `core/main.py`
    - Requirements file: `requirements.txt`
 
 2. **If you get "already a git repository" error:**
@@ -46,7 +46,7 @@ Your startup command should be (Wispbyte usually sets this automatically):
 ```
 if [[ -d .git ]] && [[ "1" == "1" ]]; then git pull; fi; 
 if [[ -f /home/container/${REQUIREMENTS_FILE} ]]; then pip install -U --prefix .local -r ${REQUIREMENTS_FILE}; fi; 
-/usr/local/bin/python /home/container/main.py
+/usr/local/bin/python /home/container/core/main.py
 ```
 
 **Don't change this** - it's correct for Wispbyte.
