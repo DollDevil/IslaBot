@@ -59,7 +59,7 @@ bot = commands.Bot(
 )
 
 # Set bot instance in all modules (must be done before registering commands/handlers)
-systems.handlers.set_bot(bot)
+handlers.set_bot(bot)
 set_tasks_bot(bot)
 set_xp_bot(bot)
 set_utils_bot(bot)
@@ -74,27 +74,27 @@ admin_commands.register_commands(bot)
 # Register event handlers
 @bot.event
 async def on_message(message):
-    await systems.handlers.on_message(message)
+    await handlers.on_message(message)
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    await systems.handlers.on_voice_state_update(member, before, after)
+    await handlers.on_voice_state_update(member, before, after)
 
 @bot.event
 async def on_raw_reaction_add(payload):
-    await systems.handlers.on_raw_reaction_add(payload)
+    await handlers.on_raw_reaction_add(payload)
 
 @bot.event
 async def on_command_error(ctx, error):
-    await systems.handlers.on_command_error(ctx, error)
+    await handlers.on_command_error(ctx, error)
 
 @bot.event
 async def on_guild_join(guild):
-    await systems.handlers.on_guild_join(guild)
+    await handlers.on_guild_join(guild)
 
 @bot.event
 async def on_member_remove(member):
-    await systems.handlers.on_member_remove(member)
+    await handlers.on_member_remove(member)
 
 @bot.event
 async def on_ready():
@@ -127,7 +127,8 @@ async def on_ready():
         # Clear any old tracking data
         from systems.events import last_event_times_today
         last_event_times_today.clear()
-        systems.tasks.last_daily_check_times_today.clear()
+        from systems.tasks import last_daily_check_times_today as last_daily_check_times
+        last_daily_check_times.clear()
         
         # Print scheduled times for each tier
         for tier, scheduled_times in EVENT_SCHEDULE.items():
@@ -142,17 +143,17 @@ async def on_ready():
         print("ΓÜá∩╕Å WARNING: Timezone support not available. Event scheduling may not work correctly.")
     
     # Set initial 30-minute cooldown to prevent events from starting immediately
-    systems.events.event_cooldown_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1800)
-    print(f"⏰ Initial event cooldown set: No events will start for 30 minutes (until {systems.events.event_cooldown_until.strftime('%H:%M:%S UTC')})")
+    events.event_cooldown_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1800)
+    print(f"⏰ Initial event cooldown set: No events will start for 30 minutes (until {events.event_cooldown_until.strftime('%H:%M:%S UTC')})")
     
     # Clear event roles on startup (no events should be active)
-    await systems.events.clear_event_roles()
+    await events.clear_event_roles()
     
     # Start background tasks
-    systems.tasks.award_vc_xp.start()
-    systems.tasks.auto_save.start()
-    systems.tasks.event_scheduler.start()
-    systems.tasks.daily_check_scheduler.start()
+    tasks.award_vc_xp.start()
+    tasks.auto_save.start()
+    tasks.event_scheduler.start()
+    tasks.daily_check_scheduler.start()
     print("Background tasks started: VC XP tracking, auto-save, event scheduler, and Daily Check scheduler")
     
     # Sync slash commands
