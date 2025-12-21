@@ -2,9 +2,16 @@
 Main entry point for IslaBot - wires together all modules
 # Auto-deployment test - remove this comment after testing
 """
+import sys
+import os
+
+# Add parent directory to path so we can import core and systems packages
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 import discord
 from discord.ext import commands
-import os
 import datetime
 from dotenv import load_dotenv
 
