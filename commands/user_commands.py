@@ -159,109 +159,109 @@ def register_commands(bot_instance):
     @bot.tree.command(name="equip", description="Equip a collar or badge")
     @app_commands.describe(item_type="Type of item to equip (collar or badge)", item_name="Name of the item to equip")
     async def equip(interaction: discord.Interaction, item_type: str, item_name: str):
-    """Equip a collar or badge."""
-    if not await check_user_command_permissions(interaction):
-        return
-    
-    user_id = interaction.user.id
-    uid = str(user_id)
-    item_type_lower = item_type.lower()
-    
-    if uid not in xp_data:
-        xp_data[uid] = {
-            "xp": 0, "level": 1, "coins": 0,
-            "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-            "times_gambled": 0, "total_wins": 0,
-            "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-            "equipped_collar": None, "equipped_badge": None
-        }
-    
-    if item_type_lower == "collar":
-        collars_owned = xp_data[uid].get("collars_owned", [])
-        if item_name not in collars_owned:
+        """Equip a collar or badge."""
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        user_id = interaction.user.id
+        uid = str(user_id)
+        item_type_lower = item_type.lower()
+        
+        if uid not in xp_data:
+            xp_data[uid] = {
+                "xp": 0, "level": 1, "coins": 0,
+                "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
+                "times_gambled": 0, "total_wins": 0,
+                "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
+                "equipped_collar": None, "equipped_badge": None
+            }
+        
+        if item_type_lower == "collar":
+            collars_owned = xp_data[uid].get("collars_owned", [])
+            if item_name not in collars_owned:
+                embed = discord.Embed(
+                    title="Item Not Owned",
+                    description=f"You don't own the collar '{item_name}'.",
+                    color=0xff000d
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            xp_data[uid]["equipped_collar"] = item_name
+            save_xp_data()
             embed = discord.Embed(
-                title="Item Not Owned",
-                description=f"You don't own the collar '{item_name}'.",
+                title="Collar Equipped",
+                description=f"You've equipped the collar '{item_name}'.",
                 color=0xff000d
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
         
-        xp_data[uid]["equipped_collar"] = item_name
-        save_xp_data()
-        embed = discord.Embed(
-            title="Collar Equipped",
-            description=f"You've equipped the collar '{item_name}'.",
-            color=0xff000d
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    elif item_type_lower == "badge":
-        badges_owned = xp_data[uid].get("badges_owned", [])
-        if item_name not in badges_owned:
+        elif item_type_lower == "badge":
+            badges_owned = xp_data[uid].get("badges_owned", [])
+            if item_name not in badges_owned:
+                embed = discord.Embed(
+                    title="Item Not Owned",
+                    description=f"You don't own the badge '{item_name}'.",
+                    color=0xff000d
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            xp_data[uid]["equipped_badge"] = item_name
+            save_xp_data()
             embed = discord.Embed(
-                title="Item Not Owned",
-                description=f"You don't own the badge '{item_name}'.",
+                title="Badge Equipped",
+                description=f"You've equipped the badge '{item_name}'.",
                 color=0xff000d
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
         
-        xp_data[uid]["equipped_badge"] = item_name
-        save_xp_data()
-        embed = discord.Embed(
-            title="Badge Equipped",
-            description=f"You've equipped the badge '{item_name}'.",
-            color=0xff000d
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    else:
-        embed = discord.Embed(
-            title="Invalid Item Type",
-            description="Item type must be 'collar' or 'badge'.",
-            color=0xff000d
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embed = discord.Embed(
+                title="Invalid Item Type",
+                description="Item type must be 'collar' or 'badge'.",
+                color=0xff000d
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     # Standalone leaderboards command (plural) - shows menu
     @bot.tree.command(name="leaderboards", description="View available leaderboards")
     async def leaderboards_menu(interaction: discord.Interaction):
-    """Show leaderboard menu"""
-    if not await check_user_command_permissions(interaction):
-        return
-    
-    embed = discord.Embed(
-        title="Leaderboards",
-        description="Which leaderboard would you like to check?\n᲼᲼",
-        color=0x58585f
-    )
-    
-    embed.add_field(
-        name="Levels Leaderboard",
-        value="💋 Use `/leaderboard <levels>`",
-        inline=False
-    )
-    embed.add_field(
-        name="Coins Leaderboard",
-        value="💵 Use `/leaderboard <coins>`",
-        inline=False
-    )
-    embed.add_field(
-        name="Activity Leaderboard",
-        value="🎀 Use `/leaderboard <activity>`",
-        inline=False
-    )
-    embed.add_field(
-        name="᲼᲼",
-        value="*I love watching you work hard for me ~*",
-        inline=False
-    )
-    
-    if int(interaction.channel.id) in ALLOWED_SEND_SET:
-        await interaction.response.send_message(embed=embed)
-    else:
-        await interaction.response.send_message(embed=embed, delete_after=15)
+        """Show leaderboard menu"""
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        embed = discord.Embed(
+            title="Leaderboards",
+            description="Which leaderboard would you like to check?\n᲼᲼",
+            color=0x58585f
+        )
+        
+        embed.add_field(
+            name="Levels Leaderboard",
+            value="💋 Use `/leaderboard <levels>`",
+            inline=False
+        )
+        embed.add_field(
+            name="Coins Leaderboard",
+            value="💵 Use `/leaderboard <coins>`",
+            inline=False
+        )
+        embed.add_field(
+            name="Activity Leaderboard",
+            value="🎀 Use `/leaderboard <activity>`",
+            inline=False
+        )
+        embed.add_field(
+            name="᲼᲼",
+            value="*I love watching you work hard for me ~*",
+            inline=False
+        )
+        
+        if int(interaction.channel.id) in ALLOWED_SEND_SET:
+            await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message(embed=embed, delete_after=15)
     
     # Leaderboard command with choice parameter
     @bot.tree.command(name="leaderboard", description="View leaderboards")

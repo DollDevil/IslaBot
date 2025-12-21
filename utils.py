@@ -34,6 +34,14 @@ from config import (
     KITTEN_ROLE_ID, PUPPY_ROLE_ID, PET_ROLE_ID, DEVOTEE_ROLE_ID
 )
 
+# Bot instance (set by main.py, but not used in this module)
+bot = None
+
+def set_bot(bot_instance):
+    """Set the bot instance for this module (not currently used, but kept for consistency)"""
+    global bot
+    bot = bot_instance
+
 def next_level_requirement(level: int) -> int:
     """Return XP needed to reach the given level"""
     if level - 1 < len(XP_THRESHOLDS):
