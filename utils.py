@@ -3,6 +3,31 @@ Utility functions for IslaBot
 """
 import random
 import discord
+
+# Timezone support
+# Try zoneinfo first (Python 3.9+), then backports, then pytz
+USE_PYTZ = False
+try:
+    from zoneinfo import ZoneInfo
+    def get_timezone(name):
+        return ZoneInfo(name)
+except ImportError:
+    try:
+        from backports.zoneinfo import ZoneInfo
+        def get_timezone(name):
+            return ZoneInfo(name)
+    except ImportError:
+        # Fallback to pytz
+        try:
+            import pytz
+            USE_PYTZ = True
+            def get_timezone(name):
+                return pytz.timezone(name)
+        except ImportError:
+            print("WARNING: No timezone support available. Install pytz: pip install pytz")
+            def get_timezone(name):
+                return None
+
 from config import (
     XP_THRESHOLDS, CHANNEL_MULTIPLIERS, LEVEL_ROLE_MAP, EXCLUDED_ROLE_SET,
     REPLY_QUOTES, LEVEL_2_ROLE_ID, BETA_BOOST_SERVANT_ROLE_IDS,
