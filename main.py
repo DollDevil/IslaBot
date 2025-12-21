@@ -1,5 +1,6 @@
 """
 Main entry point for IslaBot - wires together all modules
+# Auto-deployment test - remove this comment after testing
 """
 import discord
 from discord.ext import commands
