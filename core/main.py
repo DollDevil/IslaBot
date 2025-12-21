@@ -32,7 +32,7 @@ from systems.tasks import set_bot as set_tasks_bot
 # Try loading from secret.env first (for local development)
 try:
     load_dotenv('secret.env')
-    print("Γ£ô Loaded environment variables from secret.env")
+    print("[+] Loaded environment variables from secret.env")
 except Exception as e:
     print(f"Note: Could not load secret.env file: {e}. Trying system environment variables...")
 
