@@ -41,15 +41,18 @@ Complete guide for deploying IslaBot to Wispbyte hosting.
 
 ## Startup Command
 
-Your startup command should be (Wispbyte usually sets this automatically):
+Your startup command should be:
 
 ```
 if [[ -d .git ]] && [[ "1" == "1" ]]; then git pull; fi; 
 if [[ -f /home/container/${REQUIREMENTS_FILE} ]]; then pip install -U --prefix .local -r ${REQUIREMENTS_FILE}; fi; 
-/usr/local/bin/python /home/container/core/main.py
+cd /home/container && /usr/local/bin/python core/main.py
 ```
 
-**Don't change this** - it's correct for Wispbyte.
+**Note:** The code now automatically adds the parent directory to Python's path, so this should work. If you still get package errors, you can also use:
+```
+cd /home/container && PYTHONPATH=/home/container /usr/local/bin/python core/main.py
+```
 
 ## Updating Your Bot
 
