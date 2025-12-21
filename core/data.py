@@ -9,6 +9,23 @@ import asyncio
 # Global XP data storage
 xp_data = {}
 
+# Default user data template for new users
+_DEFAULT_USER_DATA = {
+    "xp": 0,
+    "level": 1,
+    "coins": 0,
+    "messages_sent": 0,
+    "vc_minutes": 0,
+    "event_participations": 0,
+    "times_gambled": 0,
+    "total_wins": 0,
+    "badges_owned": [],
+    "collars_owned": [],
+    "interfaces_owned": [],
+    "equipped_collar": None,
+    "equipped_badge": None
+}
+
 # Optimization: Debouncing for file saves
 _save_pending = False
 _save_task = None
