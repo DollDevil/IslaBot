@@ -1,4 +1,4 @@
-"""
+﻿"""
 Core modules for IslaBot
 """
 

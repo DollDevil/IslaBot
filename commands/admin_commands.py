@@ -1,4 +1,4 @@
-"""
+﻿"""
 Admin commands for the bot - config, obedience, testembeds, throne, killevent, sync, etc.
 """
 import discord
@@ -157,7 +157,7 @@ def register_commands(bot_instance):
 
         level_embed = discord.Embed(
             title="[ ✦ ]",
-            description="𝙰𝚍𝚟𝚊𝚗𝚌𝚎𝚖𝚎𝚗𝚝 𝚁𝚎𝚌𝚘𝚛𝚍𝚎𝚍 \n᲼᲼",
+            description="𝙰𝚍𝚟𝚊𝚗𝚌𝚎𝚖𝚎𝚗𝚝 𝚁𝚎𝚌𝚘𝚛𝚍𝚎𝚍 \n",
             color=0xff000d,
         )
         level_embed.add_field(name="𝙿𝚛𝚘𝚖𝚘𝚝𝚒𝚘𝚗", value=f"<@{member.id}>", inline=True)
@@ -165,7 +165,7 @@ def register_commands(bot_instance):
         level_embed.add_field(name="XP", value=f"{xp}/{next_level_xp}", inline=True)
         level_embed.add_field(name="Next Level", value=f"{xp_needed} XP needed", inline=False)
         level_embed.add_field(
-            name="᲼᲼",
+            name="",
             value=f"**𝙼𝚎𝚜𝚜𝚊𝚐𝚎 𝚁𝚎𝚌𝚎𝚒𝚟𝚎𝚍**\n*{lvl_quote}*",
             inline=False,
         )

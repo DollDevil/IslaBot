@@ -1,4 +1,4 @@
-"""
+﻿"""
 Gambling system for coins - gamble, dice, slots, coinflip, allin
 """
 import discord
@@ -487,19 +487,19 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
                 loss_amount = int(loss_match.group(1))
                 embed = discord.Embed(
                     title="🎰 Lucky Loss",
-                    description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n❌ You lost {loss_amount} coins.",
+                    description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n❌ You lost {loss_amount} coins.",
                     color=0xaf0808,
                 )
             else:
                 embed = discord.Embed(
                     title="🎰 Loss",
-                    description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n❌ You lost {bet} coins.",
+                    description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n❌ You lost {bet} coins.",
                     color=0xaf0808,
                 )
         else:
             embed = discord.Embed(
                 title="🎰 Loss",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n❌ You lost {bet} coins.",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n❌ You lost {bet} coins.",
                 color=0xaf0808,
             )
     elif win_type == "win":
@@ -507,19 +507,19 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
         if multiplier == 8:
             embed = discord.Embed(
                 title="🎰 Nice Hit!",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n✅ Win x{multiplier}  💵 {payout} coins received.",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n✅ Win x{multiplier}  💵 {payout} coins received.",
                 color=0x1bbe19,
             )
         elif multiplier == 15:
             embed = discord.Embed(
                 title="🎰 BIG WIN!",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n✅ Win x{multiplier}  💰 {payout} coins received.",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n✅ Win x{multiplier}  💰 {payout} coins received.",
                 color=0x1bbe19,
             )
         elif multiplier == 30:
             embed = discord.Embed(
                 title="🎰 JACKPOT! 🎉",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n✅ Win x{multiplier}  👑 {payout} coins received.\n\n*Oh? A jackpot. Good doggy—remember how rare this is.*",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n✅ Win x{multiplier}  👑 {payout} coins received.\n\n*Oh? A jackpot. Good doggy—remember how rare this is.*",
                 color=0x1bbe19,
             )
             embed.set_image(url="https://i.imgur.com/ZQOOc9n.png")
@@ -532,7 +532,7 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
         else:
             embed = discord.Embed(
                 title="🎰 Lucky Spin",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n✅ {message}  🪙 {payout} coins received.",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n✅ {message}  🪙 {payout} coins received.",
                 color=0x1bbe19,
             )
         streak_flair = get_streak_flair(streak)
@@ -541,13 +541,13 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
     elif win_type == "bonus_win":
         embed = discord.Embed(
             title="🎰 BONUS ACTIVATED!",
-            description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n✅ {message}  🪙 {payout} coins received.",
+            description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n✅ {message}  🪙 {payout} coins received.",
             color=0x1bbe19,
         )
     elif win_type == "mini_bonus":
         embed = discord.Embed(
             title="🎰 Mini Bonus!",
-            description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n🎁 Bonus payout: {payout} coins.",
+            description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n🎁 Bonus payout: {payout} coins.",
             color=0x1bbe19,
         )
     elif win_type == "big_bonus":
@@ -556,7 +556,7 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
         slots_free_spins[user_id] = free_spin_data
         embed = discord.Embed(
             title="🎰 BIG BONUS!",
-            description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n{message}",
+            description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n{message}",
             color=0x1bbe19,
         )
         embed.set_footer(text="Use /slots free")
@@ -566,7 +566,7 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
         slots_free_spins[user_id] = free_spin_data
         embed = discord.Embed(
             title="🎰 MEGA BONUS ACTIVATED!",
-            description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n🎁 You gained 5 Free Spins",
+            description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n🎁 You gained 5 Free Spins",
             color=0x1bbe19,
         )
         embed.set_footer(text="Use /slots free")
@@ -645,14 +645,14 @@ async def slots_free(interaction: discord.Interaction):
             }
             embed = discord.Embed(
                 title=f"🎰 FREE SPIN — {'Mini Bonus!' if bonus_count == 1 else 'Big Bonus!' if bonus_count == 2 else 'Mega Bonus!'}",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼\n🎁 {bonus_messages[bonus_count]}",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n\n🎁 {bonus_messages[bonus_count]}",
                 color=0x1bbe19,
             )
             embed.set_footer(text=f"Free Spins Remaining: {remaining}")
         else:
             embed = discord.Embed(
                 title="🎰 FREE SPIN",
-                description=f"᲼᲼\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n᲼᲼",
+                description=f"\n[{reels[0]}] [{reels[1]}] [{reels[2]}]\n",
                 color=0x1bbe19 if payout > 0 else 0xffae00,
             )
             if payout > 0:

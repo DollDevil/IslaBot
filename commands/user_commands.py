@@ -1,4 +1,4 @@
-"""
+﻿"""
 User commands for the bot - level, leaderboard, balance, daily, give, gambling, etc.
 """
 import discord
@@ -126,22 +126,22 @@ def register_commands(bot_instance):
         
         embed = discord.Embed(
             title=f"{member.display_name}'s Server Profile{collar_display}",
-            description=f"*{activity_quote}*\n᲼᲼",
+            description=f"*{activity_quote}*\n",
             color=0x58585f
         )
         
         embed.add_field(name="Current Level", value=str(level_val), inline=True)
         embed.add_field(name="Milestone", value=level_role, inline=True)
         embed.add_field(name="XP", value=str(xp), inline=True)
-        embed.add_field(name="᲼᲼", value="", inline=False)
+        embed.add_field(name="", value="", inline=False)
         embed.add_field(name="Messages Sent", value=f"💬 {user_data.get('messages_sent', 0)}", inline=True)
         embed.add_field(name="Voice Chat Time", value=f"🎙️ {vc_time_str}", inline=True)
         embed.add_field(name="Event Participations", value=f"🎫 {user_data.get('event_participations', 0)}", inline=True)
-        embed.add_field(name="᲼᲼", value="", inline=False)
+        embed.add_field(name="", value="", inline=False)
         embed.add_field(name="Balance", value=f"💵 {coins}", inline=True)
         embed.add_field(name="Times Gambled", value=f"🎲 {user_data.get('times_gambled', 0)}", inline=True)
         embed.add_field(name="Total Wins", value=f"🏆 {user_data.get('total_wins', 0)}", inline=True)
-        embed.add_field(name="᲼᲼", value="", inline=False)
+        embed.add_field(name="", value="", inline=False)
         embed.add_field(name="Badge Collection", value=badges_display, inline=False)
         embed.add_field(name="Collar Collection", value=collars_display, inline=False)
         embed.add_field(name="Interface Collection", value=interfaces_display, inline=False)
@@ -233,7 +233,7 @@ def register_commands(bot_instance):
         
         embed = discord.Embed(
             title="Leaderboards",
-            description="Which leaderboard would you like to check?\n᲼᲼",
+            description="Which leaderboard would you like to check?\n",
             color=0x58585f
         )
         
@@ -253,7 +253,7 @@ def register_commands(bot_instance):
             inline=False
         )
         embed.add_field(
-            name="᲼᲼",
+            name="",
             value="*I love watching you work hard for me ~*",
             inline=False
         )
@@ -347,7 +347,7 @@ def register_commands(bot_instance):
         else:
             embed = discord.Embed(
                 title="Leaderboards",
-                description="Which leaderboard would you like to check?\n᲼᲼",
+                description="Which leaderboard would you like to check?\n",
                 color=0x58585f
             )
             embed.add_field(
@@ -366,7 +366,7 @@ def register_commands(bot_instance):
                 inline=False
             )
             embed.add_field(
-                name="᲼᲼",
+                name="",
                 value="*I love watching you work hard for me ~*",
                 inline=False
             )
@@ -413,7 +413,7 @@ def register_commands(bot_instance):
         
         embed = discord.Embed(
             title="Balance",
-            description=f"Coins: **{coins}**\n᲼᲼",
+            description=f"Coins: **{coins}**\n",
             color=0xff000d,
         )
         embed.add_field(name="Current Level:", value=str(level), inline=True)

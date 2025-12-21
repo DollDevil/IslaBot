@@ -1,4 +1,4 @@
-"""
+﻿"""
 Data management for user XP, levels, coins, and statistics
 """
 import json

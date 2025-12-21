@@ -1,4 +1,4 @@
-"""
+﻿"""
 Configuration constants for IslaBot
 """
 import os

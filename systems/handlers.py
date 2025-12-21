@@ -1,4 +1,4 @@
-"""
+﻿"""
 Event handlers for Discord events - on_message, on_reaction, on_voice_state_update, etc.
 """
 import discord

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Leaderboard system for displaying user rankings
 """
 import discord
@@ -24,7 +24,7 @@ def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: 
     """Build levels leaderboard embed with pagination support."""
     embed = discord.Embed(
         title="💋 Levels Leaderboard",
-        description="᲼᲼",
+        description="",
         color=0x58585f,
     )
     
@@ -56,7 +56,7 @@ def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: 
         embed.add_field(name="Level", value="\n".join(level_lines), inline=True)
         embed.add_field(name="XP", value="\n".join(xp_lines), inline=True)
     
-    embed.add_field(name="᲼᲼", value="", inline=False)
+    embed.add_field(name="\u200b", value="", inline=False)
     
     level_quotes = [
         "I love watching you grow stronger for me. Keep going.",
@@ -73,7 +73,7 @@ def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: i
     """Build coins leaderboard embed with pagination support."""
     embed = discord.Embed(
         title="💵 Coin Leaderboard",
-        description="᲼᲼",
+        description="",
         color=0x58585f,
     )
     
@@ -105,7 +105,7 @@ def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: i
         embed.add_field(name="Coins", value="\n".join(coins_lines), inline=True)
         embed.add_field(name="Spent", value="\n".join(spent_lines), inline=True)
     
-    embed.add_field(name="᲼᲼", value="", inline=False)
+    embed.add_field(name="\u200b", value="", inline=False)
     
     coin_quotes = [
         "Seeing your coins pile up makes me curious how you'll use them.",
@@ -122,7 +122,7 @@ def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page
     """Build activity leaderboard embed with pagination support."""
     embed = discord.Embed(
         title="🎀 Activity Leaderboard",
-        description="᲼᲼",
+        description="",
         color=0x58585f,
     )
     
@@ -157,7 +157,7 @@ def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page
         embed.add_field(name="Messages", value="\n".join(messages_lines), inline=True)
         embed.add_field(name="Voice Chat Time", value="\n".join(vc_time_lines), inline=True)
     
-    embed.add_field(name="᲼᲼", value="", inline=False)
+    embed.add_field(name="\u200b", value="", inline=False)
     
     activity_quotes = [
         "You're always here. I wonder if you even realize how often I see you.",
