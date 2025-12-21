@@ -73,7 +73,6 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
     current_level = xp_data[uid]["level"]
     
     # Calculate what level the user should be based on their XP
-    # Only level up if they cross a threshold (not if they're already above it)
     calculated_level = old_level
     while True:
         next_level_xp = next_level_requirement(calculated_level + 1)
@@ -82,34 +81,41 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
         else:
             break
     
-    # Only trigger level-up if:
-    # 1. The calculated level is higher than current level, AND
-    # 2. The user actually crossed a threshold (old_xp was below the threshold)
-    if calculated_level > current_level:
-        # Check if they actually crossed a threshold (not just already above it)
-        old_next_level_xp = next_level_requirement(old_level + 1)
-        if old_xp < old_next_level_xp:  # They were below the threshold before
-            new_level = calculated_level
-            xp_data[uid]["level"] = new_level
-            
-            # Award level up bonus coins for all levels gained
-            for level in range(current_level + 1, new_level + 1):
-                if level in LEVEL_COIN_BONUSES:
-                    bonus_coins = LEVEL_COIN_BONUSES[level]
-                    add_coins(user_id, bonus_coins)
-                    print(f"  -> Level {level} bonus: {bonus_coins} coins")
-            
-            if member:
-                await update_roles_on_level(member, new_level)
-            save_xp_data()
-            # Only send one notification for the final level reached
-            await send_level_up_message(user_id)
+    # Calculate what level they should have been based on old XP (before this addition)
+    old_calculated_level = old_level
+    while True:
+        next_level_xp = next_level_requirement(old_calculated_level + 1)
+        if old_xp >= next_level_xp:
+            old_calculated_level += 1
         else:
-            # User was already above threshold - just update level silently without notification
-            xp_data[uid]["level"] = calculated_level
-            if member:
-                await update_roles_on_level(member, calculated_level)
-            save_xp_data()
+            break
+    
+    # Only trigger level-up notification if:
+    # 1. The calculated level is higher than the old calculated level (they actually leveled up in this addition)
+    # 2. The stored level is updated to match
+    if calculated_level > old_calculated_level:
+        # User actually crossed a threshold in this XP addition - send notification
+        new_level = calculated_level
+        xp_data[uid]["level"] = new_level
+        
+        # Award level up bonus coins for all levels gained
+        for level in range(old_calculated_level + 1, new_level + 1):
+            if level in LEVEL_COIN_BONUSES:
+                bonus_coins = LEVEL_COIN_BONUSES[level]
+                add_coins(user_id, bonus_coins)
+                print(f"  -> Level {level} bonus: {bonus_coins} coins")
+        
+        if member:
+            await update_roles_on_level(member, new_level)
+        save_xp_data()
+        # Only send one notification for the final level reached
+        await send_level_up_message(user_id)
+    elif calculated_level > current_level:
+        # User's stored level is out of sync (they should be higher) - update silently without notification
+        xp_data[uid]["level"] = calculated_level
+        if member:
+            await update_roles_on_level(member, calculated_level)
+        save_xp_data()
     else:
         save_xp_data()
 
