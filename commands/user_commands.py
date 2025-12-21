@@ -477,8 +477,8 @@ def register_commands(bot_instance):
         
         level = get_level(user_id)
         base_daily = min(500, int(100 + (level * 4.5)))
-        bonus = 100 if level >= 100 else 0
-        daily_amount = base_daily + bonus
+        level_bonus = 100 if level >= 100 else 0
+        daily_amount = base_daily + level_bonus
         
         uk_tz = get_timezone("Europe/London")
         if uk_tz:
@@ -487,7 +487,7 @@ def register_commands(bot_instance):
             else:
                 now_uk = datetime.datetime.now(uk_tz)
             weekday = now_uk.weekday()
-            if weekday >= 4:
+            if weekday >= 4:  # Friday (4), Saturday (5), Sunday (6)
                 daily_amount += 25
                 weekend_bonus = True
             else:
@@ -499,16 +499,22 @@ def register_commands(bot_instance):
         update_daily_cooldown(user_id)
         save_xp_data()
         
-        description = f"Claimed **{daily_amount}** coins!"
-        if weekend_bonus:
-            description += f"\n*+25 weekend bonus included*"
+        # Format level bonus field
+        level_bonus_text = f"+{level_bonus} coins" if level_bonus > 0 else "❌ No Bonus"
+        
+        # Format weekend bonus field
+        weekend_bonus_text = "✅ +25 coins" if weekend_bonus else "❌ Not Active"
         
         embed = discord.Embed(
-            title="Daily 🎁",
-            description=description,
-            color=0xff000d,
+            title="Daily Coins",
+            description=f"Claimed {daily_amount} coins!\n\u200b",
+            color=0xff9d14,
         )
-        embed.set_footer(text="Resets at 6:00 PM GMT")
+        embed.add_field(name="Level Bonus", value=level_bonus_text, inline=True)
+        embed.add_field(name="Weekend Bonus", value=weekend_bonus_text, inline=True)
+        embed.set_thumbnail(url="https://i.imgur.com/ZKq5nZ2.png")
+        embed.set_footer(text="Resets daily at 6:00 PM GMT")
+        
         await interaction.response.send_message(embed=embed)
     
     @bot.tree.command(name="give", description="Give coins to another user")
