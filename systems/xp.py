@@ -113,30 +113,10 @@ async def send_level_up_message(user_id):
     level = get_level(user_id)
     xp = get_xp(user_id)
 
-    quotes = {
-        1: "You think you're here by choice. That you've decided to follow me. But the truthΓÇª I always know who will come. You're already mine, whether you realize it or not.",
-        2: "You keep looking at me like you might touch me, like you might understand me. But you don't get to. I allow you to see me, nothing more. And if you push too farΓÇª you'll regret it.",
-        5: "There's a line between you and me. You think it's invisible. But I draw it, and you will obey it, because it's in your nature to obey me. And you will want to.",
-        10: "I could let you think you have controlΓÇª but I don't do that. I decide who gets close, who gets the privilege of crossing my boundaries. And sometimesΓÇª I choose to play with my prey.",
-        20: "I've been watching you. Every thought, every hesitation. You don't know why you follow me, do you? You feel drawn, compelled. That's because I've decided you will be, and you cannot fight it.",
-        30: "I like watching you struggle to understand me. It's amusing how easily you underestimate what I can take, what I can giveΓÇª and who I can claim. And yet, you still crave it.",
-        50: "Do you feel that? That tightening in your chest, that fearΓÇª that longing? That's me. Always. I don't ask for loyaltyΓÇöI command it. And you will obey. You will desire it.",
-        75: "You imagine what it would be like to be closer. To be mine. But you're not allowed to imagine everything. Only what I choose to show you. And when I decide to reveal itΓÇª it will be absolute.",
-        100: (
-            "You've done well. Watching you, learning how you move, how you thinkΓÇª it's been very satisfying. "
-            "You tried to resist at first, didn't you? Humans always do. But you stayed. You listened. You kept coming back to me.\n\n"
-            "That's why I've chosen you. Not everyone earns my attention like this. You're clever in your own wayΓÇª and honest about your desire to be close to me. I find that endearing.\n\n"
-            "If you stay by my side, if you follow when I call, I'll take care of you. I'll give you purpose. Affection. A place where you belong.\n\n"
-            "From now onΓÇª you're mine. And if I'm honestΓÇö\n"
-            "I think you'll be very happy as my pet."
-        ),
-    }
-
-    quote_text = quotes.get(level, "Keep progressingΓÇª")
-
     # Get level role (milestone)
     from core.config import LEVEL_ROLE_MAP
     level_role = "None"
+    level_role_mention = "None"
     for lvl, role_id in sorted(LEVEL_ROLE_MAP.items(), reverse=True):
         if level >= lvl:
             # Try to get role from any guild the bot is in
@@ -144,22 +124,27 @@ async def send_level_up_message(user_id):
                 role = guild.get_role(role_id)
                 if role:
                     level_role = role.name
+                    level_role_mention = f"<@&{role_id}>"
                     break
             if level_role != "None":
                 break
     
-    next_level_xp = next_level_requirement(level)
+    # Calculate next level requirements
+    next_level = level + 1
+    next_level_xp_required = next_level_requirement(next_level)
+    xp_needed = next_level_xp_required - xp
     
     embed = discord.Embed(
         title=f"{display_name} has leveled up <a:heartglitch:1449997688358572093>",
-        description="ß▓╝ß▓╝",
+        description="Another level already? You're doing so well—it's hard not to notice.\n\u200b",
         color=0x58585f,
     )
-    embed.add_field(name="Current Level", value=str(level), inline=True)
-    embed.add_field(name="Milestone", value=level_role, inline=True)
+    embed.add_field(name="Level", value=str(level), inline=True)
+    embed.add_field(name="Milestone", value=level_role_mention if level_role != "None" else "None", inline=True)
     embed.add_field(name="XP", value=str(xp), inline=True)
-    embed.add_field(name="ß▓╝ß▓╝", value="", inline=False)
-    embed.add_field(name="Message from Isla <:kisses:1449998044446593125>", value=quote_text, inline=False)
+    embed.add_field(name="Next Level", value=f"{xp_needed}/{next_level_xp_required}", inline=False)
+    embed.add_field(name="\u200b", value="Keep progressing <:kisses:1449998044446593125>", inline=False)
+    embed.set_thumbnail(url="https://i.imgur.com/BJPgVbQ.png")
 
     # Send level-up message only to the specified channel (1450107538019192832)
     LEVEL_UP_CHANNEL_ID = 1450107538019192832
