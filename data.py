@@ -204,8 +204,8 @@ def get_activity_quote(user_id, guild=None):
         ]
         return random.choice(quotes)
     
-           # Default
-           return "Keep working hard for me ~"
+    # Default
+    return "Keep working hard for me ~"
 
 # Daily/Give cooldowns (resets at 6pm UK daily)
 daily_cooldowns = {}
