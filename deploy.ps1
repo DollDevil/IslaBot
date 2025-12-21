@@ -57,4 +57,3 @@ Write-Host "`nDon't forget to:" -ForegroundColor Yellow
 Write-Host "  1. Configure secret.env on Wispbyte with DISCORD_TOKEN" -ForegroundColor Yellow
 Write-Host "  2. Run: pip install -r requirements.txt" -ForegroundColor Yellow
 Write-Host "  3. Restart the bot" -ForegroundColor Yellow
-

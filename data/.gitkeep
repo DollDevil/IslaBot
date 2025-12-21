@@ -1,0 +1,4 @@
+# This file ensures the data/ directory is tracked by Git
+# The xp.json file itself is ignored (see .gitignore)
+# This way the directory structure exists on Wispbyte but xp.json won't be overwritten
+

@@ -1,0 +1,8 @@
+# Git aliases for quick commands
+# Add these to your global git config: git config --global alias.deploy "!powershell -File ./quick-deploy.ps1"
+
+[alias]
+    # Quick deploy alias (requires the script)
+    deploy = !powershell -ExecutionPolicy Bypass -File ./quick-deploy.ps1
+    pushall = !git add . && git commit -m "Auto-update" && git push origin main
+
