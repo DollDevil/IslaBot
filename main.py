@@ -22,10 +22,18 @@ from events import set_bot as set_events_bot
 from tasks import set_bot as set_tasks_bot
 
 # Load environment variables
+# Try loading from secret.env first (for local development)
 try:
     load_dotenv('secret.env')
+    print("✓ Loaded environment variables from secret.env")
 except Exception as e:
-    print(f"Note: Could not load secret.env file: {e}. Using system environment variables instead.")
+    print(f"Note: Could not load secret.env file: {e}. Trying system environment variables...")
+
+# Also try .env as a fallback
+try:
+    load_dotenv('.env')
+except Exception:
+    pass  # .env is optional
 
 # Bot setup
 intents = discord.Intents.default()
@@ -149,11 +157,24 @@ async def on_ready():
         print(f"❌ Failed to sync slash commands: {e}")
 
 # Bot login
-try:
-    TOKEN = os.environ['DISCORD_TOKEN']
-    bot.run(TOKEN)
-except KeyError:
+TOKEN = os.getenv('DISCORD_TOKEN')
+if not TOKEN:
+    print("=" * 60)
     print("ERROR: DISCORD_TOKEN not found in environment variables!")
+    print("=" * 60)
+    print("\nTo fix this:")
+    print("1. For Wispbyte: Set DISCORD_TOKEN in your Wispbyte server's environment variables")
+    print("   - Go to your Wispbyte server settings")
+    print("   - Find 'Environment Variables' or 'Startup' section")
+    print("   - Add: DISCORD_TOKEN=your_bot_token_here")
+    print("\n2. For local development: Create a 'secret.env' file with:")
+    print("   DISCORD_TOKEN=your_bot_token_here")
+    print("=" * 60)
+    exit(1)
+
+try:
+    bot.run(TOKEN)
 except Exception as e:
     print(f"ERROR: Failed to start bot: {e}")
+    exit(1)
 
