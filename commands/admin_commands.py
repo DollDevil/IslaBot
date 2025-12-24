@@ -66,6 +66,12 @@ def register_commands(bot_instance):
     global bot
     bot = bot_instance
     
+    # Check if commands are already registered to avoid duplicate registration
+    registered_names = {cmd.name for cmd in bot.tree.get_commands()}
+    
+    if "config" in registered_names:
+        return  # Commands already registered, skip
+    
     @bot.tree.command(name="config", description="Show current bot configuration. Admin only.")
     async def config(interaction: discord.Interaction):
         """Show current bot configuration (Admin only)"""
@@ -254,19 +260,6 @@ def register_commands(bot_instance):
         except Exception as e:
             await interaction.response.send_message(f"❌ Failed to sync slash commands: {e}", ephemeral=True)
             print(f"❌ Failed to sync slash commands: {e}")
-    
-    @bot.tree.command(name="stopevents", description="Stop or start events from running. Admin only.")
-    async def stopevents(interaction: discord.Interaction):
-        """Stop or start events from running."""
-        import systems.events as events
-        
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        events.events_enabled = not events.events_enabled
-        status = "enabled" if events.events_enabled else "disabled"
-        await interaction.response.send_message(f"✅ Events are now **{status}**.", ephemeral=True, delete_after=10)
-        print(f"Events {status} by {interaction.user.name}")
     
     @bot.tree.command(name="levelrolecheck", description="Manually check that users do not have multiple level roles at once. Admin only.")
     async def levelrolecheck(interaction: discord.Interaction):
