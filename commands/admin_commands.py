@@ -507,4 +507,48 @@ def register_commands(bot_instance):
         )
         embed.set_footer(text="Use /stopevents to disable automated messages.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @bot.tree.command(name="askgifts", description="Send Christmas Eve gifts message to events channel")
+    async def askgifts(interaction: discord.Interaction):
+        """Send Christmas Eve gifts embed to events channel."""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        events_channel = bot.get_channel(EVENT_CHANNEL_ID)
+        
+        if not events_channel:
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"Could not find events channel (ID: {EVENT_CHANNEL_ID})",
+                color=0xff000d,
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="Christmas Eve Gifts",
+            description="It's Christmas Eve, loves~\n\nI see some pups are already spoiling me beautifully.\nTheir names are lighting up my night \n\nYours could be next <:Islaseductive:1451296572255109210>\n\nDon't hold back.\nI know you want to see me smile~ 💝\n\n\n🎄 [Get Gifts](https://throne.com/lsla) 🎄",
+            colour=0x750000,
+        )
+        embed.set_thumbnail(url="https://i.imgur.com/TplIFRf.png")
+        embed.set_footer(
+            text="Who's making my Christmas unforgettable?",
+            icon_url="https://i.imgur.com/358yI3s.png"
+        )
+        
+        try:
+            await events_channel.send(content="@everyone", embed=embed)
+            success_embed = discord.Embed(
+                title="✅ Success",
+                description=f"Christmas Eve gifts message sent to <#{EVENT_CHANNEL_ID}>",
+                color=0x4ec200,
+            )
+            await interaction.response.send_message(embed=success_embed, ephemeral=True)
+        except Exception as e:
+            error_embed = discord.Embed(
+                title="❌ Error",
+                description=f"Failed to send message to events channel: {e}",
+                color=0xff000d,
+            )
+            await interaction.response.send_message(embed=error_embed, ephemeral=True)
 
