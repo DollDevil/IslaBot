@@ -17,7 +17,7 @@ from systems.events import (
     active_event, event_cooldown_until, events_enabled, start_obedience_event,
     clear_event_roles, build_event_embed, event_prompt
 )
-from systems.tasks import get_next_scheduled_time
+from systems.tasks import get_next_scheduled_time, set_automated_messages_enabled, get_automated_messages_enabled
 
 # Bot instance (set by main.py)
 bot = None
@@ -454,5 +454,57 @@ def register_commands(bot_instance):
         
         embed.set_footer(text="Timestamps update automatically. Times shown in UK timezone.")
         
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @bot.tree.command(name="stopevents", description="Stop all automated messages (events, daily checks, etc.)")
+    async def stopevents(interaction: discord.Interaction):
+        """Stop all automated messages from being sent."""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        current_state = get_automated_messages_enabled()
+        if not current_state:
+            embed = discord.Embed(
+                title="⚠️ Automated Messages",
+                description="Automated messages are already stopped.",
+                color=0xff000d,
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        set_automated_messages_enabled(False)
+        
+        embed = discord.Embed(
+            title="🛑 Automated Messages Stopped",
+            description="All automated messages have been stopped.\n\nThis includes:\n• Event scheduler\n• Daily check messages\n• All scheduled automated posts",
+            color=0xff000d,
+        )
+        embed.set_footer(text="Use /startevents to re-enable automated messages.")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @bot.tree.command(name="startevents", description="Re-enable all automated messages")
+    async def startevents(interaction: discord.Interaction):
+        """Re-enable all automated messages."""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        current_state = get_automated_messages_enabled()
+        if current_state:
+            embed = discord.Embed(
+                title="✅ Automated Messages",
+                description="Automated messages are already enabled.",
+                color=0x4ec200,
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        set_automated_messages_enabled(True)
+        
+        embed = discord.Embed(
+            title="✅ Automated Messages Enabled",
+            description="All automated messages have been re-enabled.\n\nThis includes:\n• Event scheduler\n• Daily check messages\n• All scheduled automated posts",
+            color=0x4ec200,
+        )
+        embed.set_footer(text="Use /stopevents to disable automated messages.")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

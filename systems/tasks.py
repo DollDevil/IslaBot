@@ -20,6 +20,9 @@ from systems.events import active_event, start_obedience_event, events_enabled
 last_event_times_today = set()
 last_daily_check_times_today = set()
 
+# Global flag to stop all automated messages
+automated_messages_enabled = True
+
 # Bot instance (set by main.py)
 bot = None
 
@@ -27,6 +30,16 @@ def set_bot(bot_instance):
     """Set the bot instance for this module"""
     global bot
     bot = bot_instance
+
+def set_automated_messages_enabled(enabled: bool):
+    """Enable or disable all automated messages (events, daily checks, etc.)"""
+    global automated_messages_enabled
+    automated_messages_enabled = enabled
+    return automated_messages_enabled
+
+def get_automated_messages_enabled():
+    """Get the current state of automated messages"""
+    return automated_messages_enabled
 
 def get_next_scheduled_time(hour: int, minute: int) -> int:
     """Get next occurrence of a scheduled time in UK timezone as Unix timestamp."""
@@ -215,6 +228,10 @@ async def daily_check_scheduler():
     """Automatically send Daily Check messages at scheduled times."""
     global last_daily_check_times_today
     
+    # Check if automated messages are disabled
+    if not automated_messages_enabled:
+        return
+    
     uk_tz = _get_uk_timezone()
     if uk_tz is None:
         return
@@ -271,6 +288,10 @@ async def event_scheduler():
     """Automatically schedule events based on UK timezone schedule"""
     global active_event, last_event_times_today
     from systems.events import event_cooldown_until
+    
+    # Check if automated messages are disabled
+    if not automated_messages_enabled:
+        return
     
     if not events_enabled:
         return
