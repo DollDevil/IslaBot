@@ -18,7 +18,7 @@ from core.config import (
     EVENT_7_OPT_IN_ROLE, EVENT_7_SUCCESS_ROLE, EVENT_7_FAILED_ROLE,
     EVENT_CLEANUP_ROLES, COLLECTIVE_THRESHOLD, EXCLUDED_ROLE_SET
 )
-from core.data import increment_event_participation, xp_data
+from core.data import increment_event_participation
 from systems.xp import add_xp
 from core.utils import resolve_channel_id
 
@@ -555,13 +555,14 @@ async def start_obedience_event(ctx_or_guild, event_type: int, channel=None):
                 self.event_state.setdefault("handled", set()).add(user_id)
                 member = interaction.user
                 is_winning = (choice == self.winning)
+                guild_id = interaction.guild.id if interaction.guild else 0
                 if is_winning:
-                    increment_event_participation(user_id)
-                    await add_xp(user_id, EVENT_REWARDS[6]["win"], member=member)
+                    await increment_event_participation(user_id, guild_id=guild_id)
+                    await add_xp(user_id, EVENT_REWARDS[6]["win"], member=member, guild_id=guild_id)
                     await interaction.response.send_message("Good choice.", ephemeral=True)
                 else:
-                    increment_event_participation(user_id)
-                    await add_xp(user_id, EVENT_REWARDS[6]["lose"], member=member)
+                    await increment_event_participation(user_id, guild_id=guild_id)
+                    await add_xp(user_id, EVENT_REWARDS[6]["lose"], member=member, guild_id=guild_id)
                     await interaction.response.send_message("Wrong choice.", ephemeral=True)
         
         view = ChoiceEventView(state, winning_choice)
@@ -602,8 +603,9 @@ async def start_obedience_event(ctx_or_guild, event_type: int, channel=None):
                             member = await guild.fetch_member(user_id)
                         except:
                             print(f"⚠️ Could not fetch member {user_id}, using User object")
-                    increment_event_participation(user_id)
-                    await add_xp(user_id, EVENT_REWARDS[7]["phase1"], member=member)
+                    guild_id = guild.id if guild else 0
+                    await increment_event_participation(user_id, guild_id=guild_id)
+                    await add_xp(user_id, EVENT_REWARDS[7]["phase1"], member=member, guild_id=guild_id)
                     role = guild.get_role(EVENT_7_OPT_IN_ROLE)
                     if role:
                         if role not in member.roles:
@@ -680,8 +682,9 @@ async def end_obedience_event(state):
                     if member.id in join_times:
                         if (now - join_times[member.id]).total_seconds() >= EVENT_DURATION_SECONDS:
                             rewarded_users.add(member.id)
-                            increment_event_participation(member.id)
-                            await add_xp(member.id, reward, member=member)
+                            guild_id = guild.id if guild else 0
+                            await increment_event_participation(member.id, guild_id=guild_id)
+                            await add_xp(member.id, reward, member=member, guild_id=guild_id)
                             print(f"  ↳ ✅ Event 2: Awarded {reward} XP bonus to {member.name} for staying in VC")
     
     # Event 4: Send ending message
@@ -980,8 +983,11 @@ async def handle_event_message(message):
         cooldowns[user_id] = now
         active_event["message_cooldowns"] = cooldowns
         active_event.setdefault("participants", set()).add(user_id)
-        increment_event_participation(user_id)
-        await add_xp(user_id, EVENT_REWARDS[1], member=message.author)
+        guild_id = message.guild.id if message.guild else 0
+        await increment_event_participation(user_id, guild_id=guild_id)
+        # V3: Award coins instead of XP for events
+        from core.data import add_coins
+        await add_coins(user_id, EVENT_REWARDS[1], guild_id=guild_id, reason="event_participation", meta={"event_type": 1})
     
     # Event 4: Keyword Prompt - Phase 2 only
     elif event_type == 4 and active_event.get("phase") == 2:
@@ -1028,8 +1034,9 @@ async def handle_event_message(message):
             user_id = message.author.id
             if user_id not in active_event.get("participants", set()):
                 active_event.setdefault("participants", set()).add(user_id)
-                increment_event_participation(user_id)
-                await add_xp(user_id, EVENT_REWARDS[5], member=message.author)
+                guild_id = message.guild.id if message.guild else 0
+                await increment_event_participation(user_id, guild_id=guild_id)
+                await add_xp(user_id, EVENT_REWARDS[5], member=message.author, guild_id=guild_id)
                 try:
                     await message.add_reaction("❤️")
                 except Exception:
@@ -1093,8 +1100,9 @@ async def handle_event_message(message):
             
             if is_correct:
                 if user_id not in active_event.get("answered_correctly", set()):
-                    increment_event_participation(user_id)
-                    await add_xp(user_id, EVENT_REWARDS[7]["phase2_correct"], member=message.author)
+                    guild_id = message.guild.id if message.guild else 0
+                    await increment_event_participation(user_id, guild_id=guild_id)
+                    await add_xp(user_id, EVENT_REWARDS[7]["phase2_correct"], member=message.author, guild_id=guild_id)
                     active_event.setdefault("answered_correctly", set()).add(user_id)
                     
                     guild = message.guild
@@ -1112,8 +1120,9 @@ async def handle_event_message(message):
                         print(f"  ↳ Failed to add heart reaction: {e}")
                     print(f"  ↳ ✅ Event 7 Phase 2: {message.author.name} answered correctly (+{EVENT_REWARDS[7]['phase2_correct']} XP)")
             else:
-                increment_event_participation(user_id)
-                await add_xp(user_id, EVENT_REWARDS[7]["phase2_wrong"], member=message.author)
+                guild_id = message.guild.id if message.guild else 0
+                await increment_event_participation(user_id, guild_id=guild_id)
+                await add_xp(user_id, EVENT_REWARDS[7]["phase2_wrong"], member=message.author, guild_id=guild_id)
                 active_event.setdefault("answered_incorrectly", set()).add(user_id)
                 print(f"  ↳ ❌ Event 7 Phase 2: {message.author.name} answered incorrectly ({EVENT_REWARDS[7]['phase2_wrong']} XP)")
     
@@ -1174,11 +1183,12 @@ async def handle_event_reaction(payload: discord.RawReactionActionEvent):
     if event_type == 3 and payload.message_id == active_event["message_id"]:
         emoji_str = str(payload.emoji)
         heart_emojis = active_event.get("heart_emojis", [])
-        if emoji_str in heart_emojis:
+            if emoji_str in heart_emojis:
             if payload.user_id not in active_event.get("reactors", set()):
                 active_event.setdefault("reactors", set()).add(payload.user_id)
-                increment_event_participation(payload.user_id)
-                await add_xp(payload.user_id, EVENT_REWARDS[3], member=member)
+                guild_id = active_event.get("guild_id", 0)
+                await increment_event_participation(payload.user_id, guild_id=guild_id)
+                await add_xp(payload.user_id, EVENT_REWARDS[3], member=member, guild_id=guild_id)
 
 async def escalate_collective_event(guild):
     """Trigger phase 2 for collective event."""

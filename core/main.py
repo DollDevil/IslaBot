@@ -67,6 +67,10 @@ set_events_bot(bot)
 user_commands.set_bot(bot)
 admin_commands.set_bot(bot)
 
+# Import and set onboarding bot
+import systems.onboarding as onboarding
+onboarding.set_bot(bot)
+
 # Register commands
 user_commands.register_commands(bot)
 admin_commands.register_commands(bot)
@@ -97,6 +101,10 @@ async def on_member_remove(member):
     await handlers.on_member_remove(member)
 
 @bot.event
+async def on_member_join(member):
+    await handlers.on_member_join(member)
+
+@bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
@@ -112,8 +120,9 @@ async def on_ready():
     
     print(f'Bot is now in {len([g for g in bot.guilds if g.id in ALLOWED_GUILDS])} allowed guild(s)')
     
-    # Load XP data
-    load_xp_data()
+    # Initialize database and import JSON if exists
+    from core.data import initialize_database
+    await initialize_database()
     
     # Initialize event scheduler with UK timezone
     uk_tz = get_timezone("Europe/London")
@@ -154,7 +163,10 @@ async def on_ready():
     tasks.auto_save.start()
     tasks.event_scheduler.start()
     tasks.daily_check_scheduler.start()
-    print("Background tasks started: VC XP tracking, auto-save, event scheduler, and Daily Check scheduler")
+    tasks.v3_daily_job.start()
+    tasks.v3_weekly_job.start()
+    tasks.cleanup_expired_events_task.start()
+    print("Background tasks started: VC XP tracking, auto-save, event scheduler, Daily Check scheduler, V3 progression jobs (daily/weekly), and event cleanup")
     
     # Sync slash commands
     try:
@@ -179,9 +191,22 @@ if not TOKEN:
     print("=" * 60)
     exit(1)
 
+@bot.event
+async def on_disconnect():
+    """Clean up database connection on disconnect"""
+    from core.data import shutdown_database
+    await shutdown_database()
+
 try:
     bot.run(TOKEN)
 except Exception as e:
     print(f"ERROR: Failed to start bot: {e}")
+    # Ensure database is closed on error
+    from core.data import shutdown_database
+    import asyncio
+    try:
+        asyncio.run(shutdown_database())
+    except:
+        pass
     exit(1)
 

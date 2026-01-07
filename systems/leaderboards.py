@@ -1,10 +1,8 @@
 ﻿"""
-Leaderboard system for displaying user rankings
+Leaderboard system for displaying user rankings (V3 Progression System)
 """
 import discord
 import random
-from core.data import xp_data, get_level, get_xp
-from core.utils import next_level_requirement
 from core.config import ALLOWED_SEND_SET
 
 def format_placement(place: int) -> str:
@@ -20,10 +18,10 @@ def format_placement(place: int) -> str:
     else:
         return f"{place}th"
 
-def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 20):
-    """Build levels leaderboard embed with pagination support."""
+def build_rank_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 20):
+    """Build rank leaderboard embed with pagination support (V3 progression system)."""
     embed = discord.Embed(
-        title="💋 Levels Leaderboard",
+        title="💋 Rank Leaderboard",
         description="",
         color=0x58585f,
     )
@@ -33,45 +31,45 @@ def build_levels_leaderboard_embed(sorted_users, page: int = 0, users_per_page: 
     users_to_show = sorted_users[start_idx:end_idx]
     
     placement_lines = []
-    level_lines = []
-    xp_lines = []
+    rank_lines = []
+    lce_lines = []
     
     for idx, (user_id, data) in enumerate(users_to_show, start=start_idx + 1):
         try:
-            level = data.get("level", 1)
-            xp = data.get("xp", 0)
+            rank = data.get("rank", "Newcomer")
+            lce = data.get("lce", 0)
             placement_lines.append(f"{idx}. <@{user_id}>")
-            level_lines.append(str(level))
-            xp_lines.append(str(xp))
+            rank_lines.append(rank)
+            lce_lines.append(str(lce))
         except Exception as e:
-            print(f"Error processing user {user_id} in levels leaderboard: {e}")
+            print(f"Error processing user {user_id} in rank leaderboard: {e}")
             continue
     
-    # Ensure all arrays are the same length (they should be, but double-check)
+    # Ensure all arrays are the same length
     expected_length = len(placement_lines)
-    if len(level_lines) != expected_length or len(xp_lines) != expected_length:
-        min_length = min(len(placement_lines), len(level_lines), len(xp_lines))
+    if len(rank_lines) != expected_length or len(lce_lines) != expected_length:
+        min_length = min(len(placement_lines), len(rank_lines), len(lce_lines))
         placement_lines = placement_lines[:min_length]
-        level_lines = level_lines[:min_length]
-        xp_lines = xp_lines[:min_length]
+        rank_lines = rank_lines[:min_length]
+        lce_lines = lce_lines[:min_length]
     
     if len(placement_lines) > 0:
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
-        embed.add_field(name="Level", value="\n".join(level_lines), inline=True)
-        embed.add_field(name="XP", value="\n".join(xp_lines), inline=True)
+        embed.add_field(name="Rank", value="\n".join(rank_lines), inline=True)
+        embed.add_field(name="LCE", value="\n".join(lce_lines), inline=True)
     else:
         embed.description = "No users found on this page."
     
     embed.add_field(name="\u200b", value="", inline=False)
     
-    level_quotes = [
+    rank_quotes = [
         "I love watching you grow stronger for me. Keep going.",
         "All that effort… I noticed. Of course I did.",
         "Climbing the ranks just to impress me? Good.",
         "You work so hard. Exactly the kind of dedication I enjoy.",
-        "Levels don't rise on their own. You earned this—for me."
+        "Ranks don't rise on their own. You earned this—for me."
     ]
-    embed.set_footer(text=random.choice(level_quotes), icon_url="https://i.imgur.com/GYOngr2.png")
+    embed.set_footer(text=random.choice(rank_quotes), icon_url="https://i.imgur.com/GYOngr2.png")
     
     return embed
 
@@ -131,7 +129,7 @@ def build_coins_leaderboard_embed(sorted_users, page: int = 0, users_per_page: i
     return embed
 
 def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page: int = 20):
-    """Build activity leaderboard embed with pagination support."""
+    """Build activity leaderboard embed with pagination support (V3 progression system - WAS)."""
     embed = discord.Embed(
         title="🎀 Activity Leaderboard",
         description="",
@@ -143,35 +141,32 @@ def build_activity_leaderboard_embed(sorted_users, page: int = 0, users_per_page
     users_to_show = sorted_users[start_idx:end_idx]
     
     placement_lines = []
+    was_lines = []
     messages_lines = []
-    vc_time_lines = []
     
     for idx, (user_id, data) in enumerate(users_to_show, start=start_idx + 1):
         try:
-            messages_sent = data.get("messages_sent", 0)
-            vc_minutes = data.get("vc_minutes", 0)
-            vc_hours = vc_minutes // 60
-            vc_mins = vc_minutes % 60
-            vc_time_str = f"{vc_hours}h {vc_mins}m" if vc_hours > 0 else f"{vc_mins}m"
+            was = data.get("was", 0)
+            messages_7d = data.get("messages_7d", 0)
             placement_lines.append(f"{idx}. <@{user_id}>")
-            messages_lines.append(f"💬 {messages_sent}")
-            vc_time_lines.append(f"🎙️ {vc_time_str}")
+            was_lines.append(str(was))
+            messages_lines.append(str(messages_7d))
         except Exception as e:
             print(f"Error processing user {user_id} in activity leaderboard: {e}")
             continue
     
-    # Ensure all arrays are the same length (they should be, but double-check)
+    # Ensure all arrays are the same length
     expected_length = len(placement_lines)
-    if len(messages_lines) != expected_length or len(vc_time_lines) != expected_length:
-        min_length = min(len(placement_lines), len(messages_lines), len(vc_time_lines))
+    if len(was_lines) != expected_length or len(messages_lines) != expected_length:
+        min_length = min(len(placement_lines), len(was_lines), len(messages_lines))
         placement_lines = placement_lines[:min_length]
+        was_lines = was_lines[:min_length]
         messages_lines = messages_lines[:min_length]
-        vc_time_lines = vc_time_lines[:min_length]
     
     if len(placement_lines) > 0:
         embed.add_field(name="Placement", value="\n".join(placement_lines), inline=True)
-        embed.add_field(name="Messages", value="\n".join(messages_lines), inline=True)
-        embed.add_field(name="Voice Chat Time", value="\n".join(vc_time_lines), inline=True)
+        embed.add_field(name="WAS (7d)", value="\n".join(was_lines), inline=True)
+        embed.add_field(name="Messages (7d)", value="\n".join(messages_lines), inline=True)
     else:
         embed.description = "No users found on this page."
     
@@ -252,13 +247,16 @@ class LeaderboardView(discord.ui.View):
     
     @discord.ui.button(label="My Stats", style=discord.ButtonStyle.danger)
     async def my_stats_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Show the user's stats in a new embed."""
+        """Show the user's stats in a new embed (V3 progression system)."""
         user_id = interaction.user.id
-        level = get_level(user_id)
-        xp = get_xp(user_id)
+        guild_id = interaction.guild.id if interaction.guild else 0
         
-        next_level_xp = next_level_requirement(level)
-        xp_needed = next_level_xp - xp
+        from core.data import get_profile_stats
+        
+        stats = await get_profile_stats(guild_id, user_id)
+        rank = stats.get("rank", "Newcomer")
+        lce = stats.get("lifetime", 0)
+        was = stats.get("was", 0)
         
         messages = [
             "I can tell you've been trying.",
@@ -272,9 +270,9 @@ class LeaderboardView(discord.ui.View):
             color=0xff000d
         )
         embed.add_field(name="User", value=f"<@{user_id}>", inline=True)
-        embed.add_field(name="Level", value=f"{level}", inline=True)
-        embed.add_field(name="XP", value=f"{xp}/{next_level_xp}", inline=True)
-        embed.add_field(name="Next Level", value=f"{xp_needed} XP needed", inline=False)
+        embed.add_field(name="Rank", value=rank, inline=True)
+        embed.add_field(name="LCE", value=str(lce), inline=True)
+        embed.add_field(name="WAS (7d)", value=str(was), inline=False)
         embed.add_field(name="\u200b", value=f"𝙼𝚎𝚜𝚜𝚊𝚐𝚎 𝚁𝚎𝚌𝚎𝚒𝚟𝚎𝚍\n*{random.choice(messages)}*", inline=False)
         
         await interaction.response.send_message(content=f"<@{user_id}>", embed=embed, ephemeral=True)

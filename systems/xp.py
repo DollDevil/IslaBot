@@ -3,7 +3,8 @@ XP system - leveling, XP calculation, and level-up messages
 """
 import discord
 from core.config import MULTIPLIER_ROLE_SET, LEVEL_COIN_BONUSES
-from core.data import xp_data, add_coins, save_xp_data, get_level, get_xp
+from core.data import add_coins, get_level, get_xp
+from core.db import upsert_user_profile, fetchone
 from core.utils import next_level_requirement, update_roles_on_level
 
 # This will be set by main.py
@@ -23,28 +24,29 @@ def calculate_xp_multiplier(member):
                 multiplier += 0.2
     return multiplier
 
-async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
+async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0, guild_id=None):
     """Add XP with optional multiplier from roles and channel"""
-    uid = str(user_id)
-    if uid not in xp_data:
-        xp_data[uid] = {
-            "xp": 0, "level": 1, "coins": 0,
-            "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-            "times_gambled": 0, "total_wins": 0,
-            "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-            "equipped_collar": None, "equipped_badge": None
-        }
+    # Get guild_id from member if not provided
+    if guild_id is None and member:
+        guild_id = member.guild.id if isinstance(member, discord.Member) else 0
+    if guild_id is None:
+        guild_id = 0
     
-    # Ensure all fields exist
-    defaults = {
-        "coins": 0, "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-        "times_gambled": 0, "total_wins": 0,
-        "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-        "equipped_collar": None, "equipped_badge": None
-    }
-    for key, default_value in defaults.items():
-        if key not in xp_data[uid]:
-            xp_data[uid][key] = default_value
+    guild_id = int(guild_id)
+    user_id = int(user_id)
+    
+    # Get current stats
+    profile = await fetchone(
+        "SELECT xp, level FROM user_profile WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id)
+    )
+    
+    if not profile:
+        old_level = 1
+        old_xp = 0
+    else:
+        old_level = profile["level"]
+        old_xp = profile["xp"]
     
     # Apply multiplier if member object is provided
     if member:
@@ -55,22 +57,10 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
     else:
         amount = int(amount * base_multiplier)
     
-    old_level = xp_data[uid]["level"]
-    old_xp = xp_data[uid]["xp"]
-    xp_data[uid]["xp"] += amount
+    current_xp = old_xp + amount
     # Prevent negative XP
-    if xp_data[uid]["xp"] < 0:
-        xp_data[uid]["xp"] = 0
-
-    # Award coins: 1 coin per 10 XP (only for positive XP gains)
-    if amount > 0:
-        coins_earned = amount // 10
-        if coins_earned > 0:
-            add_coins(user_id, coins_earned)
-            print(f"  -> Awarded {coins_earned} coins ({amount} XP / 10)")
-
-    current_xp = xp_data[uid]["xp"]
-    current_level = xp_data[uid]["level"]
+    if current_xp < 0:
+        current_xp = 0
     
     # Calculate what level the user should be based on their XP
     calculated_level = old_level
@@ -90,40 +80,42 @@ async def add_xp(user_id, amount, member=None, base_multiplier: float = 1.0):
         else:
             break
     
+    # Update XP in database
+    await upsert_user_profile(guild_id, user_id, xp=current_xp, level=calculated_level)
+    
+    # Award coins: 1 coin per 10 XP (only for positive XP gains)
+    if amount > 0:
+        coins_earned = amount // 10
+        if coins_earned > 0:
+            await add_coins(user_id, coins_earned, guild_id=guild_id)
+            print(f"  -> Awarded {coins_earned} coins ({amount} XP / 10)")
+    
     # Only trigger level-up notification if:
     # 1. The calculated level is higher than the old calculated level (they actually leveled up in this addition)
-    # 2. The stored level is updated to match
     if calculated_level > old_calculated_level:
         # User actually crossed a threshold in this XP addition - send notification
         new_level = calculated_level
-        xp_data[uid]["level"] = new_level
         
         # Award level up bonus coins for all levels gained
         for level in range(old_calculated_level + 1, new_level + 1):
             if level in LEVEL_COIN_BONUSES:
                 bonus_coins = LEVEL_COIN_BONUSES[level]
-                add_coins(user_id, bonus_coins)
+                await add_coins(user_id, bonus_coins, guild_id=guild_id)
                 print(f"  -> Level {level} bonus: {bonus_coins} coins")
         
         if member:
             await update_roles_on_level(member, new_level)
-        save_xp_data()
         # Only send one notification for the final level reached
-        await send_level_up_message(user_id)
-    elif calculated_level > current_level:
-        # User's stored level is out of sync (they should be higher) - update silently without notification
-        xp_data[uid]["level"] = calculated_level
-        if member:
-            await update_roles_on_level(member, calculated_level)
-        save_xp_data()
-    else:
-        save_xp_data()
+        await send_level_up_message(user_id, guild_id)
 
-async def send_level_up_message(user_id):
+async def send_level_up_message(user_id, guild_id=None):
     """Send level-up message to the level-up channel"""
     if not bot:
         return
-        
+    
+    if guild_id is None:
+        guild_id = 0
+    
     try:
         user = await bot.fetch_user(user_id)
     except:
@@ -132,16 +124,21 @@ async def send_level_up_message(user_id):
     
     # Get member from guild to access display_name (nickname)
     member = None
-    for guild in bot.guilds:
-        member = guild.get_member(user_id)
-        if member:
-            break
+    if guild_id != 0:
+        guild = bot.get_guild(guild_id)
+        if guild:
+            member = guild.get_member(user_id)
+    else:
+        for guild in bot.guilds:
+            member = guild.get_member(user_id)
+            if member:
+                break
     
     # Fallback to user name if member not found
     display_name = member.display_name if member else user.name
     
-    level = get_level(user_id)
-    xp = get_xp(user_id)
+    level = await get_level(user_id, guild_id=guild_id)
+    xp = await get_xp(user_id, guild_id=guild_id)
 
     # Get level role (milestone)
     from core.config import LEVEL_ROLE_MAP

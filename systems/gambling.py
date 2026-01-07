@@ -11,7 +11,7 @@ import asyncio
 
 from core.config import EVENT_CHANNEL_ID
 from core.data import (
-    get_coins, add_coins, has_coins, save_xp_data,
+    get_coins, add_coins, has_coins,
     increment_gambling_attempt, increment_gambling_win, add_gambling_spent
 )
 
@@ -239,17 +239,17 @@ async def gamble(interaction: discord.Interaction, bet: int):
     else:
         await interaction.response.defer()
     
-    increment_gambling_attempt(user_id)
-    add_gambling_spent(user_id, bet)
+    guild_id = interaction.guild.id if interaction.guild else 0
+    await increment_gambling_attempt(user_id, guild_id=guild_id)
+    await add_gambling_spent(user_id, bet, guild_id=guild_id)
     won = random.random() < 0.49
     update_gambling_cooldown(user_id)
     streak = update_gambling_streak(user_id, won)
     
     if won:
-        increment_gambling_win(user_id)
+        await increment_gambling_win(user_id, guild_id=guild_id)
         winnings = bet * 2
-        add_coins(user_id, bet)
-        save_xp_data()
+        await add_coins(user_id, bet, guild_id=guild_id)
         
         win_messages = [
             "Huh… look at that.\nLuck actually noticed you this time.",
@@ -292,8 +292,7 @@ async def gamble(interaction: discord.Interaction, bet: int):
             except:
                 pass
     else:
-        add_coins(user_id, -bet)
-        save_xp_data()
+        await add_coins(user_id, -bet, guild_id=guild_id)
         
         loss_messages = [
             "You really thought luck was on your side this time?\nThat was cute.",
@@ -363,17 +362,17 @@ async def dice(interaction: discord.Interaction, bet: int):
         await interaction.followup.send(embed=embed, ephemeral=True)
         return
     
-    increment_gambling_attempt(user_id)
-    add_gambling_spent(user_id, bet)
+    guild_id = interaction.guild.id if interaction.guild else 0
+    await increment_gambling_attempt(user_id, guild_id=guild_id)
+    await add_gambling_spent(user_id, bet, guild_id=guild_id)
     user_roll = random.randint(1, 6)
     dealer_roll = random.randint(1, 6)
     
     update_gambling_cooldown(user_id)
     
     if user_roll > dealer_roll:
-        increment_gambling_win(user_id)
-        add_coins(user_id, bet)
-        save_xp_data()
+        await increment_gambling_win(user_id, guild_id=guild_id)
+        await add_coins(user_id, bet, guild_id=guild_id)
         streak = update_gambling_streak(user_id, True)
         
         win_messages = [
@@ -394,8 +393,7 @@ async def dice(interaction: discord.Interaction, bet: int):
         embed.set_footer(text=f"✅ +{bet} coins")
         await interaction.followup.send(embed=embed)
     elif user_roll < dealer_roll:
-        add_coins(user_id, -bet)
-        save_xp_data()
+        await add_coins(user_id, -bet, guild_id=guild_id)
         streak = update_gambling_streak(user_id, False)
         
         loss_messages = [
@@ -471,10 +469,10 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
     
     await interaction.response.defer()
     
-    increment_gambling_attempt(user_id)
-    add_coins(user_id, -bet)
-    add_gambling_spent(user_id, bet)
-    save_xp_data()
+    guild_id = interaction.guild.id if interaction.guild else 0
+    await increment_gambling_attempt(user_id, guild_id=guild_id)
+    await add_coins(user_id, -bet, guild_id=guild_id)
+    await add_gambling_spent(user_id, bet, guild_id=guild_id)
     
     reels = spin_slots_reels()
     payout, win_type, message = calculate_slots_payout(reels, bet)
@@ -485,11 +483,10 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
             loss_amount = int(loss_match.group(1))
             refund = bet - loss_amount
             if refund > 0:
-                add_coins(user_id, refund)
-            save_xp_data()
+                await add_coins(user_id, refund, guild_id=guild_id)
     
     if win_type in ["win", "bonus_win"]:
-        increment_gambling_win(user_id)
+        await increment_gambling_win(user_id, guild_id=guild_id)
         streak = update_gambling_streak(user_id, True)
     elif win_type == "loss":
         streak = update_gambling_streak(user_id, False)
@@ -497,8 +494,7 @@ async def slots_bet(interaction: discord.Interaction, bet: int):
         streak = 0
     
     if payout > 0:
-        add_coins(user_id, payout)
-        save_xp_data()
+        await add_coins(user_id, payout, guild_id=guild_id)
     
     if win_type == "loss":
         if message and "Lost" in message:
@@ -644,9 +640,9 @@ async def slots_free(interaction: discord.Interaction):
     
     slots_free_spins[user_id] = free_spin_data
     
+    guild_id = interaction.guild.id if interaction.guild else 0
     if payout > 0:
-        add_coins(user_id, payout)
-        save_xp_data()
+        await add_coins(user_id, payout, guild_id=guild_id)
     
     if remaining == 0:
         total_winnings = free_spin_data.get("total_winnings", 0)
@@ -700,7 +696,8 @@ async def allin(interaction: discord.Interaction, game: str):
         return
     
     user_id = interaction.user.id
-    all_coins = get_coins(user_id)
+    guild_id = interaction.guild.id if interaction.guild else 0
+    all_coins = await get_coins(user_id, guild_id=guild_id)
     
     if all_coins < 10:
         await interaction.response.send_message("You need at least 10 coins to gamble.", ephemeral=True, delete_after=5)

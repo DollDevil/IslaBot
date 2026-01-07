@@ -11,7 +11,7 @@ from core.config import (
     NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS, CHANNEL_MULTIPLIERS,
     MESSAGE_COOLDOWN, VC_XP, EVENT_SCHEDULE, LEVEL_ROLE_MAP
 )
-from core.data import xp_data, get_level, get_xp, save_xp_data
+from core.data import xp_data, get_level, get_xp
 from core.utils import next_level_requirement, get_timezone, USE_PYTZ, update_roles_on_level
 from systems.events import (
     active_event, event_cooldown_until, events_enabled, start_obedience_event,
@@ -57,6 +57,15 @@ async def check_admin_command_permissions(interaction_or_ctx) -> bool:
             await interaction_or_ctx.response.send_message("You don't have permission to use this command.", ephemeral=True, delete_after=5)
         else:
             await interaction_or_ctx.send("You don't have permission to use this command.", delete_after=5)
+        return False
+    
+    # Block Bad Pup users from using commands (even admins)
+    from systems.onboarding import has_bad_pup_role
+    if has_bad_pup_role(user):
+        if is_interaction:
+            await interaction_or_ctx.response.send_message("You cannot use commands while you have the Bad Pup role. Type the required submission text to redeem yourself.", ephemeral=True, delete_after=10)
+        else:
+            await interaction_or_ctx.send("You cannot use commands while you have the Bad Pup role. Type the required submission text to redeem yourself.", delete_after=10)
         return False
     
     return True
@@ -135,8 +144,9 @@ def register_commands(bot_instance):
             return
         
         member = interaction.user
-        level = get_level(member.id)
-        xp = get_xp(member.id)
+        guild_id = interaction.guild.id if interaction.guild else 0
+        level = await get_level(member.id, guild_id=guild_id)
+        xp = await get_xp(member.id, guild_id=guild_id)
 
         level_quotes = {
             1: "You think you're here by choice. That you've decided to follow me. But the truth… I always know who will come. You're already mine, whether you realize it or not.",
@@ -321,7 +331,8 @@ def register_commands(bot_instance):
             if member.bot or any(int(r.id) in EXCLUDED_ROLE_SET for r in member.roles):
                 continue
             
-            user_level = get_level(member.id)
+            guild_id = interaction.guild.id if interaction.guild else 0
+            user_level = await get_level(member.id, guild_id=guild_id)
             if user_level > 0:
                 try:
                     await update_roles_on_level(member, user_level)
@@ -544,4 +555,639 @@ def register_commands(bot_instance):
                 color=0xff000d,
             )
             await interaction.response.send_message(embed=error_embed, ephemeral=True)
+    
+    # Onboarding configuration group
+    configure_group = app_commands.Group(name="configure", description="Configure bot settings. Admin only.")
+    
+    onboarding_group = app_commands.Group(name="onboarding", parent=configure_group, description="Configure onboarding system")
+    
+    @onboarding_group.command(name="type", description="Configure onboarding channel or roles")
+    @app_commands.choices(config_type=[
+        app_commands.Choice(name="channel", value="channel"),
+        app_commands.Choice(name="role", value="role")
+    ])
+    @app_commands.describe(
+        config_type="Type of configuration",
+        name="For channel: channel name/ID. For role: role type (Unverified/Verified/Bad Pup)",
+        serverrole="For role: the server role to use"
+    )
+    async def configure_onboarding(interaction: discord.Interaction, config_type: str, name: str, serverrole: discord.Role = None):
+        """Configure onboarding channel or roles"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        from systems.onboarding import set_onboarding_channel, set_role
+        
+        config_type_value = config_type
+        
+        if config_type_value == "channel":
+            # Try to parse as channel ID first, then try to find by name
+            channel = None
+            try:
+                channel_id = int(name)
+                channel = bot.get_channel(channel_id) or interaction.guild.get_channel(channel_id)
+            except ValueError:
+                # Try to find by name
+                for ch in interaction.guild.channels:
+                    if ch.name.lower() == name.lower():
+                        channel = ch
+                        break
+            
+            if not channel:
+                await interaction.response.send_message(f"Channel '{name}' not found. Please provide a channel mention, ID, or name.", ephemeral=True, delete_after=5)
+                return
+            
+            set_onboarding_channel(channel.id)
+            embed = discord.Embed(
+                title="✅ Configuration Updated",
+                description=f"Onboarding channel set to {channel.mention}",
+                color=0x4ec200
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        elif config_type_value == "role":
+            valid_roles = ["Unverified", "Verified", "Bad Pup"]
+            if name not in valid_roles:
+                await interaction.response.send_message(f"Invalid role type. Must be one of: {', '.join(valid_roles)}", ephemeral=True, delete_after=5)
+                return
+            
+            if not serverrole:
+                await interaction.response.send_message("Please provide a server role.", ephemeral=True, delete_after=5)
+                return
+            
+            set_role(name, serverrole.id)
+            embed = discord.Embed(
+                title="✅ Configuration Updated",
+                description=f"Onboarding role '{name}' set to {serverrole.mention}",
+                color=0x4ec200
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Roles configuration embed builders
+    def build_pronouns_embed() -> discord.Embed:
+        """Build pronouns selection embed"""
+        embed = discord.Embed(
+            description="Identification required.\n\nSelect the terms Isla will use to address you.",
+            color=0x58585f
+        )
+        embed.set_author(
+            name="✧ TRANSMISSION ✧",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        return embed
+    
+    def build_petnames_embed() -> discord.Embed:
+        """Build petnames selection embed"""
+        embed = discord.Embed(
+            description="Classification pending.\n\nChoose how you will be recognized.",
+            color=0x58585f
+        )
+        embed.set_author(
+            name="✧ TRANSMISSION ✧",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        return embed
+    
+    def build_region_embed() -> discord.Embed:
+        """Build region selection embed"""
+        embed = discord.Embed(
+            description="Isla observes across many regions.\n\nIdentify where you primarily exist.",
+            color=0x58585f
+        )
+        embed.set_author(
+            name="✧ TRANSMISSION ✧",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        return embed
+    
+    # Roles selection menu views
+    class PronounsSelectView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            
+        @discord.ui.select(
+            placeholder="How should Isla refer to you?",
+            options=[
+                discord.SelectOption(
+                    label="She / Her",
+                    value="she_her",
+                    description="You will be addressed using she/her."
+                ),
+                discord.SelectOption(
+                    label="They / Them",
+                    value="they_them",
+                    description="You will be addressed using they/them."
+                ),
+                discord.SelectOption(
+                    label="He / Him",
+                    value="he_him",
+                    description="You will be addressed using he/him."
+                ),
+                discord.SelectOption(
+                    label="Prefer not to say",
+                    value="none",
+                    description="Isla will avoid pronouns unless necessary."
+                ),
+            ]
+        )
+        async def pronouns_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+            # Handle pronoun selection (role assignment logic would go here)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send(f"You selected: {select.values[0]}", ephemeral=True)
+    
+    class PetnamesSelectView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            
+        @discord.ui.select(
+            placeholder="Choose how you wish to be seen.",
+            options=[
+                discord.SelectOption(
+                    label="Kitten",
+                    value="kitten",
+                    description="Curious. Soft-spoken. Attentive to Isla's presence."
+                ),
+                discord.SelectOption(
+                    label="Puppy",
+                    value="puppy",
+                    description="Eager. Loyal. Thrives on approval and direction."
+                ),
+                discord.SelectOption(
+                    label="Pet",
+                    value="pet",
+                    description="Neutral. Observant. Exists comfortably under Isla's watch."
+                ),
+                discord.SelectOption(
+                    label="Stray",
+                    value="stray",
+                    description="Undecided. Watching from the edges—for now."
+                ),
+            ]
+        )
+        async def petnames_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+            # Handle petname selection (role assignment logic would go here)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send(f"You selected: {select.values[0]}", ephemeral=True)
+    
+    class RegionSelectView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            
+        @discord.ui.select(
+            placeholder="Select your primary region.",
+            options=[
+                discord.SelectOption(
+                    label="EMEA",
+                    value="emea",
+                    description="Europe, Middle East & Africa."
+                ),
+                discord.SelectOption(
+                    label="APAC",
+                    value="apac",
+                    description="Asia–Pacific regions."
+                ),
+                discord.SelectOption(
+                    label="AMERICAS",
+                    value="americas",
+                    description="North, Central & South America."
+                ),
+                discord.SelectOption(
+                    label="Unspecified / Roaming",
+                    value="unspecified",
+                    description="You prefer not to declare a region."
+                ),
+            ]
+        )
+        async def region_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+            # Handle region selection (role assignment logic would go here)
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send(f"You selected: {select.values[0]}", ephemeral=True)
+    
+    # Roles configuration storage
+    async def save_roles_config(guild_id: int, message_type: str, channel_id: int, message_id: int):
+        """Save roles configuration to database"""
+        from core.db import execute, _now_iso
+        now = _now_iso()
+        await execute(
+            """INSERT OR REPLACE INTO roles_config (guild_id, message_type, channel_id, message_id, updated_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (guild_id, message_type, channel_id, message_id, now)
+        )
+    
+    async def get_roles_config(guild_id: int, message_type: str):
+        """Get roles configuration from database"""
+        from core.db import fetchone
+        row = await fetchone(
+            "SELECT channel_id, message_id FROM roles_config WHERE guild_id = ? AND message_type = ?",
+            (guild_id, message_type)
+        )
+        if row:
+            return {"channel_id": row["channel_id"], "message_id": row["message_id"]}
+        return None
+    
+    # Roles configuration commands
+    roles_group = app_commands.Group(name="roles", parent=configure_group, description="Configure role selection messages")
+    
+    @roles_group.command(name="send", description="Send a role selection message to a channel")
+    @app_commands.describe(
+        message="Type of role message to send",
+        channel="Channel to send the message to"
+    )
+    @app_commands.choices(message=[
+        app_commands.Choice(name="pronouns", value="pronouns"),
+        app_commands.Choice(name="petnames", value="petnames"),
+        app_commands.Choice(name="region", value="region"),
+    ])
+    async def roles_send(interaction: discord.Interaction, message: str, channel: discord.TextChannel):
+        """Send a role selection message to a channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Build embed and view based on message type
+        if message == "pronouns":
+            embed = build_pronouns_embed()
+            view = PronounsSelectView()
+        elif message == "petnames":
+            embed = build_petnames_embed()
+            view = PetnamesSelectView()
+        elif message == "region":
+            embed = build_region_embed()
+            view = RegionSelectView()
+        else:
+            await interaction.followup.send("Invalid message type. Must be: pronouns, petnames, or region.", ephemeral=True)
+            return
+        
+        # Check if message already exists
+        existing = await get_roles_config(interaction.guild.id, message)
+        if existing:
+            # Overwrite existing message
+            try:
+                existing_channel = bot.get_channel(existing["channel_id"])
+                if existing_channel:
+                    existing_msg = await existing_channel.fetch_message(existing["message_id"])
+                    if existing_msg:
+                        await existing_msg.delete()
+            except:
+                pass  # Message may have been deleted, continue anyway
+        
+        # Send new message
+        try:
+            sent_message = await channel.send(embed=embed, view=view)
+            await save_roles_config(interaction.guild.id, message, channel.id, sent_message.id)
+            await interaction.followup.send(f"✅ Roles message for {message} has been sent.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to send message: {e}", ephemeral=True)
+    
+    @roles_group.command(name="edit", description="Edit an existing role selection message")
+    @app_commands.describe(message="Type of role message to edit")
+    @app_commands.choices(message=[
+        app_commands.Choice(name="pronouns", value="pronouns"),
+        app_commands.Choice(name="petnames", value="petnames"),
+        app_commands.Choice(name="region", value="region"),
+    ])
+    async def roles_edit(interaction: discord.Interaction, message: str):
+        """Edit an existing role selection message"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Get existing configuration
+        config = await get_roles_config(interaction.guild.id, message)
+        if not config:
+            await interaction.followup.send(f"❌ No {message} configuration message exists yet. Use /configure roles send first.", ephemeral=True)
+            return
+        
+        # Build embed and view based on message type
+        if message == "pronouns":
+            embed = build_pronouns_embed()
+            view = PronounsSelectView()
+        elif message == "petnames":
+            embed = build_petnames_embed()
+            view = PetnamesSelectView()
+        elif message == "region":
+            embed = build_region_embed()
+            view = RegionSelectView()
+        else:
+            await interaction.followup.send("Invalid message type. Must be: pronouns, petnames, or region.", ephemeral=True)
+            return
+        
+        # Fetch and edit message
+        try:
+            channel = bot.get_channel(config["channel_id"])
+            if not channel:
+                await interaction.followup.send(f"❌ Channel not found. Message may have been deleted.", ephemeral=True)
+                return
+            
+            existing_msg = await channel.fetch_message(config["message_id"])
+            await existing_msg.edit(embed=embed, view=view)
+            await save_roles_config(interaction.guild.id, message, config["channel_id"], config["message_id"])
+            await interaction.followup.send(f"✅ Roles message for {message} has been updated.", ephemeral=True)
+        except discord.NotFound:
+            await interaction.followup.send(f"❌ Message not found. It may have been deleted. Use /configure roles send to create a new one.", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to edit message: {e}", ephemeral=True)
+    
+    # Introductions configuration commands
+    introductions_group = app_commands.Group(name="introductions", parent=configure_group, description="Configure introduction channel")
+    
+    @introductions_group.command(name="set", description="Set the introductions channel")
+    @app_commands.describe(channel="The channel to use for introductions")
+    async def introductions_set(interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the introductions channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import execute
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        
+        await execute(
+            """INSERT OR REPLACE INTO introductions_config (guild_id, channel_id, updated_at)
+               VALUES (?, ?, ?)""",
+            (interaction.guild.id, channel.id, now)
+        )
+        
+        embed = discord.Embed(
+            title="✅ Configuration Updated",
+            description=f"Introductions channel set to {channel.mention}",
+            color=0x4ec200
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @introductions_group.command(name="show", description="Show the current introductions channel")
+    async def introductions_show(interaction: discord.Interaction):
+        """Show the current introductions channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import fetchone
+        
+        row = await fetchone(
+            "SELECT channel_id FROM introductions_config WHERE guild_id = ?",
+            (interaction.guild.id,)
+        )
+        
+        if row:
+            channel = bot.get_channel(row["channel_id"])
+            if channel:
+                embed = discord.Embed(
+                    title="📋 Introductions Configuration",
+                    description=f"Current channel: {channel.mention}",
+                    color=0x4ec200
+                )
+            else:
+                embed = discord.Embed(
+                    title="📋 Introductions Configuration",
+                    description=f"Channel ID: {row['channel_id']} (channel not found)",
+                    color=0xff000d
+                )
+        else:
+            embed = discord.Embed(
+                title="📋 Introductions Configuration",
+                description="No introductions channel configured. Use /configure introductions set to configure one.",
+                color=0xff000d
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    bot.tree.add_command(configure_group)
+    
+    @bot.tree.command(name="testmessage", description="Test onboarding and profile messages. Admin only.")
+    @app_commands.describe(message_name="Name of the message to test", category="Category for profile_info (optional)")
+    async def testmessage(interaction: discord.Interaction, message_name: str, category: str = None):
+        """Test onboarding and profile messages"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        member = interaction.user
+        
+        # Onboarding messages
+        if message_name.startswith("onboarding_"):
+            from systems.onboarding import (
+                send_onboarding_welcome, send_onboarding_rules,
+                send_rules_accept_1, send_rules_decline_1,
+                send_rules_accept_2, send_rules_decline_2,
+                send_rules_submission_false, send_rules_submission_correct
+            )
+            
+            if message_name == "onboarding_welcome":
+                await interaction.response.defer(ephemeral=True)
+                await send_onboarding_welcome(member)
+                await interaction.followup.send("✅ Welcome message sent!", ephemeral=True)
+            
+            elif message_name == "onboarding_rules":
+                await send_onboarding_rules(interaction, member)
+            
+            elif message_name == "onboarding_rules_accept_1":
+                await send_rules_accept_1(interaction, member)
+            
+            elif message_name == "onboarding_rules_decline_1":
+                await send_rules_decline_1(interaction, member)
+            
+            elif message_name == "onboarding_rules_accept_2":
+                await send_rules_accept_2(interaction, member)
+            
+            elif message_name == "onboarding_rules_decline_2":
+                await send_rules_decline_2(interaction, member)
+            
+            elif message_name == "onboarding_rules_submission_false":
+                await send_rules_submission_false(interaction, member)
+            
+            elif message_name == "onboarding_rules_submission_correct":
+                await interaction.response.defer(ephemeral=True)
+                channel = interaction.channel
+                if isinstance(channel, discord.TextChannel):
+                    await send_rules_submission_correct(channel, member)
+                await interaction.followup.send("✅ Submission correct message sent!", ephemeral=True)
+            
+            else:
+                await interaction.response.send_message(
+                    f"Unknown onboarding message: {message_name}",
+                    ephemeral=True,
+                    delete_after=5
+                )
+        
+        # Profile messages
+        elif message_name == "profile":
+            from core.data import get_profile_stats
+            from commands.user_commands import build_profile_embed
+            
+            guild_id = interaction.guild.id if interaction.guild else 0
+            fake_stats = await get_profile_stats(guild_id, member.id)
+            embed = build_profile_embed(member, fake_stats)
+            
+            from core.config import ALLOWED_SEND_SET
+            if int(interaction.channel.id) in ALLOWED_SEND_SET:
+                await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
+            else:
+                await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
+        
+        elif message_name == "collection":
+            from core.data import get_profile_stats
+            from commands.user_commands import build_collection_embed
+            
+            guild_id = interaction.guild.id if interaction.guild else 0
+            fake_stats = await get_profile_stats(guild_id, member.id)
+            embed = build_collection_embed(member, fake_stats)
+            
+            from core.config import ALLOWED_SEND_SET
+            if int(interaction.channel.id) in ALLOWED_SEND_SET:
+                await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
+            else:
+                await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
+        
+        # Rank messages
+        elif message_name == "rank":
+            from core.data import get_profile_stats, get_rank
+            from commands.user_commands import build_rank_embed
+            from systems.progression import GATES, RANK_LADDER
+            
+            guild_id = interaction.guild.id if interaction.guild else 0
+            fake_stats = await get_profile_stats(guild_id, member.id)
+            rank_data = await get_rank(guild_id, member.id)
+            fake_stats.update(rank_data)
+            
+            # Calculate failing gates count
+            rank_names = [r["name"] for r in RANK_LADDER]
+            current_rank_name = fake_stats.get("rank", "Newcomer")
+            current_idx = rank_names.index(current_rank_name) if current_rank_name in rank_names else 0
+            next_idx = min(current_idx + 1, len(rank_names) - 1)
+            next_rank_name = rank_names[next_idx] if next_idx > current_idx else current_rank_name
+            
+            failing_gates_count = 0
+            if next_rank_name != "Max Rank":
+                next_gates = GATES.get(next_rank_name, [])
+                for gate in next_gates:
+                    gate_type = gate["type"]
+                    gate_min = gate["min"]
+                    
+                    if gate_type == "messages_7d" and fake_stats.get("messages_sent", 0) < gate_min:
+                        failing_gates_count += 1
+                    elif gate_type == "was" and fake_stats.get("was", 0) < gate_min:
+                        failing_gates_count += 1
+                    elif gate_type == "obedience14" and fake_stats.get("obedience_pct", 0) < gate_min:
+                        failing_gates_count += 1
+                
+                if fake_stats.get("orders_failed", 0) > 4:
+                    failing_gates_count += 1
+                if fake_stats.get("orders_late", 0) > 2:
+                    failing_gates_count += 1
+            
+            fake_stats["failing_gates_count"] = failing_gates_count
+            
+            embed = build_rank_embed(member, fake_stats)
+            
+            from core.config import ALLOWED_SEND_SET
+            if int(interaction.channel.id) in ALLOWED_SEND_SET:
+                await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
+            else:
+                await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
+        
+        elif message_name == "rank_info":
+            from commands.user_commands import build_rank_info_embed
+            
+            embed = build_rank_info_embed()
+            
+            from core.config import ALLOWED_SEND_SET
+            if int(interaction.channel.id) in ALLOWED_SEND_SET:
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message(embed=embed, delete_after=15)
+        
+        # Order messages
+        elif message_name == "orders":
+            from commands.user_commands import build_orders_embed, _get_available_orders
+            
+            guild_id = interaction.guild.id if interaction.guild else 0
+            user_id = member.id
+            available_orders = await _get_available_orders(guild_id)
+            embed = build_orders_embed(available_orders, guild_id, user_id)
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        elif message_name.startswith("order_info:"):
+            order_name = message_name.split(":", 1)[1]
+            from commands.user_commands import build_order_info_embed, _normalize_order_name, _get_available_orders
+            
+            guild_id = interaction.guild.id if interaction.guild else 0
+            order_key = _normalize_order_name(order_name)
+            available_orders = await _get_available_orders(guild_id)
+            is_available = order_key in available_orders
+            
+            embed = build_order_info_embed(order_key, is_available)
+            if embed:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message("Unknown order.", ephemeral=True)
+        
+        elif message_name.startswith("order_accept:"):
+            order_name = message_name.split(":", 1)[1]
+            from commands.user_commands import build_order_accept_embed, _normalize_order_name, ORDERS_CATALOG
+            
+            order_key = _normalize_order_name(order_name)
+            if order_key in ORDERS_CATALOG:
+                order = ORDERS_CATALOG[order_key]
+                embed = build_order_accept_embed(order_key, order["due_seconds"])
+                if embed:
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                else:
+                    await interaction.response.send_message("Error building embed.", ephemeral=True)
+            else:
+                await interaction.response.send_message("Unknown order.", ephemeral=True)
+        
+        elif message_name.startswith("order_complete:"):
+            order_name = message_name.split(":", 1)[1]
+            from commands.user_commands import build_order_complete_embed, _normalize_order_name, ORDERS_CATALOG
+            
+            order_key = _normalize_order_name(order_name)
+            if order_key in ORDERS_CATALOG:
+                order = ORDERS_CATALOG[order_key]
+                # Simulate completion proof
+                completion_proof = "💬 Messages: 2/2\n✅ Task completed"
+                embed = build_order_complete_embed(order_key, False, order["reward_coins"], completion_proof)
+                if embed:
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                else:
+                    await interaction.response.send_message("Error building embed.", ephemeral=True)
+            else:
+                await interaction.response.send_message("Unknown order.", ephemeral=True)
+        
+        else:
+            await interaction.response.send_message(
+                f"Unknown message name: {message_name}\n\nAvailable messages:\n"
+                "**Onboarding:**\n"
+                "- onboarding_welcome\n- onboarding_rules\n- onboarding_rules_accept_1\n"
+                "- onboarding_rules_decline_1\n- onboarding_rules_accept_2\n- onboarding_rules_decline_2\n"
+                "- onboarding_rules_submission_false\n- onboarding_rules_submission_correct\n\n"
+                "**Profile:**\n"
+                "- profile\n- collection\n\n"
+                "**Rank:**\n"
+                "- rank\n- rank_info\n\n"
+                "**Orders:**\n"
+                "- orders\n- order_info:<order_name>\n- order_accept:<order_name>\n- order_complete:<order_name>",
+                ephemeral=True,
+                delete_after=15
+            )
 

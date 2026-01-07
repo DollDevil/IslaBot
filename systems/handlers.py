@@ -13,9 +13,8 @@ from core.config import (
     EXCLUDED_ROLE_SET, VC_XP_TRACK_CHANNELS, VC_XP, MESSAGE_COOLDOWN,
     ALLOWED_GUILDS
 )
-from core.data import xp_data, save_xp_data
-from systems.xp import add_xp
-from core.utils import resolve_channel_id, resolve_category_id, get_channel_multiplier, get_reply_quote
+# V3 Progression: XP/Level system removed
+from core.utils import resolve_channel_id, resolve_category_id, get_channel_multiplier
 from systems.events import active_event, handle_event_message, handle_event_reaction
 
 # Global state
@@ -42,6 +41,21 @@ async def on_message(message):
     if isinstance(message.author, discord.Member):
         if any(int(role.id) in EXCLUDED_ROLE_SET for role in message.author.roles):
             print(f"  ↳ Skipped: User has bot role")
+            return
+        
+        # Check for Bad Pup role - handle submission messages
+        from systems.onboarding import has_bad_pup_role, check_submission_text, send_rules_submission_correct, send_rules_submission_false
+        if has_bad_pup_role(message.author):
+            # Check if message matches submission text
+            if check_submission_text(message.content):
+                # Correct submission - verify user
+                await send_rules_submission_correct(message, message.author)
+                print(f"Bad Pup user {message.author.name} submitted correct text, verified")
+            else:
+                # Incorrect submission - send false message
+                await send_rules_submission_false(message, message.author)
+                print(f"Bad Pup user {message.author.name} submitted incorrect text")
+            # Return early - Bad Pup users can't do anything else
             return
 
         # Channel permission checks for special event channels
@@ -75,69 +89,391 @@ async def on_message(message):
                     pass
                 return
 
-    # Reply system for introduction channel
+    # Reaction system for introduction channel (reactions only, no messages)
     if resolved_channel_id == REPLY_CHANNEL_ID and isinstance(message.author, discord.Member):
-        quote = get_reply_quote(message.author)
-        embed = discord.Embed(
-            description=f"*{quote}*",
-            color=0xff000d
-        )
-        try:
-            await message.reply(embed=embed)
-            print(f"  ↳ Replied to {message.author.name} with quote: {quote[:50]}...")
-        except Exception as e:
-            print(f"  ↳ Failed to reply: {e}")
-        
         try:
             await message.add_reaction("❤️")
             print(f"  ↳ Added ❤️ reaction to message from {message.author.name}")
         except Exception as e:
             print(f"  ↳ Failed to add reaction: {e}")
+    
+    # Introduction channel reply system
+    await handle_introduction_reply(message)
 
     # Obedience event tracking - process BEFORE exclusion checks so event messages work in any channel
     await handle_event_message(message)
 
-    # Track messages sent for ALL channels (excluding bot commands)
-    # This happens before XP exclusion checks so all messages are counted
+    # Track messages sent for ALL channels (excluding bot commands) - V3 progression
+    # This happens before exclusion checks so all messages are counted
     user_id = message.author.id
     is_bot_command = message.content.startswith('!') or (message.content.startswith('/') and len(message.content) > 1)
-    if not is_bot_command:
-        uid = str(user_id)
-        # Optimization: Use default data template
-        from core.data import _DEFAULT_USER_DATA, _user_data_cache
-        if uid not in xp_data:
-            xp_data[uid] = _DEFAULT_USER_DATA.copy()
-            _user_data_cache[uid] = xp_data[uid]
-        user_data = xp_data[uid]
-        user_data["messages_sent"] = user_data.get("messages_sent", 0) + 1
-        _user_data_cache[uid] = user_data
-        print(f"  ↳ Tracked message count for {message.author.name}")
-
-    # Skip excluded categories for XP gain
-    category_id = resolve_category_id(message.channel)
-    if category_id in NON_XP_CATEGORY_IDS:
-        print(f"  ↳ Skipped: Category excluded from XP ({category_id})")
-        return
-    if resolved_channel_id in NON_XP_CHANNEL_IDS:
-        print(f"  ↳ Skipped: Channel excluded from XP ({resolved_channel_id})")
-        return
-
-    # Award XP in ALL channels (except excluded ones and bot commands)
-    # Bot commands are already excluded above, so award XP for all other messages
-    current_time = datetime.datetime.now(datetime.UTC)
+    if not is_bot_command and isinstance(message.author, discord.Member):
+        guild_id = message.guild.id
+        channel_id = message.channel.id
+        
+        # Record message event (for order verification)
+        is_reply = message.reference is not None and message.reference.resolved is not None
+        replied_to_user_is_bot = False
+        if is_reply and message.reference.resolved:
+            if isinstance(message.reference.resolved, discord.Message):
+                replied_to_user_is_bot = message.reference.resolved.author.bot
+        
+        from core.db import record_message_event, bump_message
+        await record_message_event(guild_id, user_id, channel_id, is_reply, replied_to_user_is_bot)
+        await bump_message(guild_id, user_id)
+        print(f"  ↳ Tracked message for {message.author.name}")
     
-    if user_id in message_cooldowns:
-        time_since_last = (current_time - message_cooldowns[user_id]).total_seconds()
-        if time_since_last < MESSAGE_COOLDOWN:
-            print(f"  ↳ Cooldown active ({MESSAGE_COOLDOWN - time_since_last:.0f}s remaining)")
+    # Note: XP/Level system removed - progression now based on Coins, Rank, Activity, Orders
+
+    # V3 Progression: Messages are tracked for Activity/WAS, not XP
+    # XP/Level system removed - progression now based on Coins, Rank, Activity, Orders
+    # Message tracking already done above via record_message()
+
+# Introduction reply system functions
+async def get_introductions_channel_id(guild_id: int):
+    """Get configured introductions channel ID for a guild"""
+    from core.db import fetchone
+    row = await fetchone(
+        "SELECT channel_id FROM introductions_config WHERE guild_id = ?",
+        (guild_id,)
+    )
+    return row["channel_id"] if row else None
+
+async def check_introduction_cooldown(guild_id: int, user_id: int) -> bool:
+    """Check if user is on cooldown for introduction replies (6 hours)"""
+    from core.db import fetchone
+    row = await fetchone(
+        "SELECT last_replied_at FROM introduction_replies WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id)
+    )
+    if not row:
+        return False
+    
+    last_replied = datetime.datetime.fromisoformat(row["last_replied_at"].replace('Z', '+00:00'))
+    six_hours_ago = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=6)
+    return last_replied > six_hours_ago
+
+async def update_introduction_cooldown(guild_id: int, user_id: int):
+    """Update introduction reply cooldown"""
+    from core.db import execute
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    await execute(
+        """INSERT OR REPLACE INTO introduction_replies (guild_id, user_id, last_replied_at)
+           VALUES (?, ?, ?)""",
+        (guild_id, user_id, now)
+    )
+
+async def get_user_region(member: discord.Member) -> str:
+    """Get user's region from their role selection (EMEA, APAC, AMERICAS, UNSPECIFIED)"""
+    from core.db import fetchone
+    row = await fetchone(
+        """SELECT item_id FROM inventory_items 
+           WHERE guild_id = ? AND user_id = ? AND item_type = ? 
+           AND item_id IN ('emea', 'apac', 'americas')""",
+        (member.guild.id, member.id, "region")
+    )
+    if row:
+        return row["item_id"].upper()  # EMEA, APAC, AMERICAS
+    return "UNSPECIFIED"
+
+async def get_user_petname(member: discord.Member) -> tuple:
+    """Get user's petname selection (petname string or None, has_petname bool)"""
+    from core.db import fetchone
+    row = await fetchone(
+        """SELECT item_id FROM inventory_items 
+           WHERE guild_id = ? AND user_id = ? AND item_type = ? 
+           AND item_id IN ('kitten', 'puppy', 'pet')""",
+        (member.guild.id, member.id, "petname")
+    )
+    if row:
+        return (row["item_id"], True)  # Return lowercase petname
+    return (None, False)
+
+def get_user_local_time_bucket(region: str) -> str:
+    """Get user's local time bucket: early, daytime, or late"""
+    if region == "UNSPECIFIED":
+        return "daytime"
+    
+    # Map regions to UTC offsets (simplified - fixed offsets)
+    # EMEA: UTC+2, APAC: UTC+8, AMERICAS: UTC-5
+    offset_map = {
+        "EMEA": 2,
+        "APAC": 8,
+        "AMERICAS": -5,
+    }
+    
+    offset = offset_map.get(region, 0)
+    
+    # Get UTC time and add offset
+    utc_now = datetime.datetime.now(datetime.UTC)
+    local_time = utc_now + datetime.timedelta(hours=offset)
+    hour = local_time.hour
+    
+    if 5 <= hour < 12:
+        return "early"
+    elif hour >= 12:
+        return "daytime"
+    else:  # 0-4
+        return "late"
+
+def classify_intro_length(content: str) -> str:
+    """Classify introduction length: short, medium, or long"""
+    # Remove whitespace for character count
+    content_no_ws = ''.join(content.split())
+    length = len(content_no_ws)
+    
+    if length < 120:
+        return "short"
+    elif length < 350:
+        return "medium"
+    else:
+        return "long"
+
+def select_introduction_quote(petname: str, has_petname: bool, length: str, time_bucket: str) -> str:
+    """Select introduction quote based on parameters"""
+    quotes = {
+        # Petname quotes
+        ("petname", "short", "daytime"): "A new <petname> with a quick introduction. I would've liked reading more~",
+        ("petname", "short", "late"): "Short introduction so late at night — you are one interesting <petname>. Btw... they say nighttime is the best time to try my programs~",
+        ("petname", "short", "early"): "Short and sweet introduction — good {petname}. It's pretty early for you, isn't it? Have you had your morning coffee yet? I'd loooove a coffee right now... share some through Throne, would you~ 💋",
+        ("petname", "medium", "daytime"): "A new <petname> with a solid introduction. I enjoyed reading what you chose to share, now go run my programs~",
+        ("petname", "medium", "late"): "An introduction so late at night? You are one interesting <petname>. Btw... they say nighttime is the best time to try my programs~",
+        ("petname", "medium", "early"): "I liked your introduction — good {petname}. It's pretty early for you though, isn't it? Have you had your morning coffee yet? I'd loooove a coffee right now... share some through Throne, would you~ 💋",
+        ("petname", "long", "daytime"): "Long and open introduction — my kind of <petname>. Your words already have me intrigued.",
+        ("petname", "long", "late"): "So many words this late at night — you pour yourself out beautifully, <petname>. Btw... they say nighttime is the best time to try my programs~",
+        ("petname", "long", "early"): "Long intro this early in the morning — such an eager {petname}. You woke up ready to please. Now go send your goddess a coffee through Throne~ 💋",
+        
+        # No petname quotes
+        ("no_petname", "short", "daytime"): "A new user with a quick introduction. I would've liked reading more~",
+        ("no_petname", "short", "late"): "Short introduction so late at night — you are one interesting person. Btw... they say nighttime is the best time to try my programs~",
+        ("no_petname", "short", "early"): "Short and sweet introduction — I like that. It's pretty early for you, isn't it? Have you had your morning coffee yet? I see you woke up ready to please. Now go send your goddess a coffee through Throne~ 💋",
+        ("no_petname", "medium", "daytime"): "A new user with a solid introduction. I enjoyed reading what you chose to share, now go run my programs~",
+        ("no_petname", "medium", "late"): "An introduction so late at night? You are one interesting person. Btw... they say nighttime is the best time to try my programs~",
+        ("no_petname", "medium", "early"): "I liked your introduction. It's pretty early for you though, isn't it? Have you had your morning coffee yet? I'd loooove a coffee right now... share some through Throne, would you~ 💋",
+        ("no_petname", "long", "daytime"): "Long and open introduction — just the way I like it. Your words already have me intrigued.",
+        ("no_petname", "long", "late"): "So many words this late at night — you pour yourself out beautifully. Btw... they say nighttime is the best time to try my programs~",
+        ("no_petname", "long", "early"): "Long intro this early in the morning? I see you woke up ready to please. Now go send your goddess a coffee through Throne~ 💋",
+    }
+    
+    petname_key = "petname" if has_petname else "no_petname"
+    key = (petname_key, length, time_bucket)
+    quote = quotes.get(key, quotes.get((petname_key, length, "daytime"), "Welcome."))
+    
+    # Substitute petname placeholders
+    if has_petname and petname:
+        quote = quote.replace("<petname>", petname)
+        quote = quote.replace("{petname}", petname)
+    
+    return quote
+
+class IntroductionReplyView(discord.ui.View):
+    """View with gift button and conditional throne/programs buttons"""
+    def __init__(self, guild_id: int, user_id: int, is_early: bool, is_late: bool):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        
+        # Gift button (always)
+        gift_button = discord.ui.Button(
+            emoji="🎁",
+            label="Gift from Isla",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"intro_gift_{guild_id}_{user_id}"
+        )
+        gift_button.callback = self.gift_callback
+        self.add_item(gift_button)
+        
+        # Throne button (only if early)
+        if is_early:
+            throne_button = discord.ui.Button(
+                emoji="☕",
+                label="Throne",
+                style=discord.ButtonStyle.link,
+                url="https://throne.com/lsla"
+            )
+            self.add_item(throne_button)
+        
+        # Programs button (only if late)
+        if is_late:
+            programs_button = discord.ui.Button(
+                emoji="👾",
+                label="Programs",
+                style=discord.ButtonStyle.link,
+                url="https://discord.com/channels/1407164448132698213/1449922902760882307"
+            )
+            self.add_item(programs_button)
+    
+    async def gift_callback(self, interaction: discord.Interaction):
+        """Handle gift button click"""
+        from core.db import fetchone, execute
+        from core.data import add_coins
+        
+        # Check if already claimed
+        row = await fetchone(
+            "SELECT claimed_at FROM gift_claims WHERE guild_id = ? AND user_id = ?",
+            (self.guild_id, self.user_id)
+        )
+        
+        if row:
+            await interaction.response.send_message("🎁 You've already claimed your gift!", ephemeral=True)
+            return
+        
+        # Get user region and petname for bonus calculation
+        member = interaction.user if isinstance(interaction.user, discord.Member) else None
+        region = await get_user_region(member) if member else "UNSPECIFIED"
+        petname, has_petname = await get_user_petname(member) if member else (None, False)
+        
+        # Calculate coin reward
+        coins = 100
+        if has_petname:
+            coins += 25
+        if region != "UNSPECIFIED":
+            coins += 25
+        
+        # Award coins
+        await add_coins(self.user_id, coins, guild_id=self.guild_id, reason="intro_gift", meta={"petname": has_petname, "region": region})
+        
+        # Mark as claimed
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        await execute(
+            "INSERT INTO gift_claims (guild_id, user_id, claimed_at) VALUES (?, ?, ?)",
+            (self.guild_id, self.user_id, now)
+        )
+        
+        embed = discord.Embed(description=f"🎁 Claimed **+{coins}** coins")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+async def handle_introduction_reply(message):
+    """Handle introduction channel replies"""
+    if not isinstance(message.author, discord.Member) or message.author.bot:
+        return
+    
+    if not message.guild:
+        return
+    
+    # Skip bot commands
+    if message.content.startswith('!') or (message.content.startswith('/') and len(message.content) > 1):
+        return
+    
+    # Check if this is the introductions channel
+    guild_id = message.guild.id
+    intro_channel_id = await get_introductions_channel_id(guild_id)
+    
+    if not intro_channel_id or message.channel.id != intro_channel_id:
+        return
+    
+    # Check cooldown
+    if await check_introduction_cooldown(guild_id, message.author.id):
+        return
+    
+    # Get user region and petname
+    region = await get_user_region(message.author)
+    petname, has_petname = await get_user_petname(message.author)
+    
+    # Get time bucket
+    time_bucket = get_user_local_time_bucket(region)
+    is_early = (time_bucket == "early")
+    is_late = (time_bucket == "late")
+    
+    # Classify intro length
+    length = classify_intro_length(message.content)
+    
+    # Select quote
+    quote = select_introduction_quote(petname, has_petname, length, time_bucket)
+    
+    # Build embed
+    embed = discord.Embed(description=quote)
+    embed.set_author(
+        name="𝚂𝚢𝚜𝚝𝚎𝚖 𝙼𝚎𝚜𝚜𝚊𝚐𝚎",
+        icon_url="https://i.imgur.com/irmCXhw.gif"
+    )
+    
+    # Create view
+    view = IntroductionReplyView(guild_id, message.author.id, is_early, is_late)
+    
+    # Send as DM (preferred), fallback to channel reply
+    try:
+        await message.author.send(embed=embed, view=view)
+        print(f"  ↳ Sent introduction reply DM to {message.author.name}")
+    except discord.Forbidden:
+        # DM failed, send as channel reply
+        try:
+            reply_msg = await message.reply(
+                content=f"<@{message.author.id}>",
+                embed=embed,
+                view=view,
+                delete_after=20
+            )
+            print(f"  ↳ Sent introduction reply in channel to {message.author.name} (DM blocked)")
+        except Exception as e:
+            print(f"  ↳ Failed to send introduction reply: {e}")
             return
     
-    message_cooldowns[user_id] = current_time
-    base_mult = get_channel_multiplier(resolved_channel_id)
-    print(f"  ↳ ✅ Adding 10 XP to {message.author.name} (channel mult {base_mult}x)")
-    await add_xp(message.author.id, 10, member=message.author, base_multiplier=base_mult)
+    # Update cooldown
+    await update_introduction_cooldown(guild_id, message.author.id)
 
 async def on_voice_state_update(member, before, after):
+    """Handle voice state changes and track VC sessions"""
+    # Record voice session changes for order verification
+    if member.bot:
+        return
+    
+    guild_id = member.guild.id if member.guild else None
+    user_id = member.id
+    
+    if not guild_id:
+        return
+    
+    from core.db import execute, _now_iso
+    from datetime import datetime
+    
+    now_ts = int(datetime.now(datetime.UTC).timestamp())
+    
+    # User joined a voice channel
+    if not before.channel and after.channel:
+        # Record join time
+        await execute(
+            """INSERT INTO voice_sessions (guild_id, user_id, join_ts, leave_ts, minutes)
+               VALUES (?, ?, ?, NULL, 0)""",
+            (guild_id, user_id, now_ts)
+        )
+    
+    # User left a voice channel
+    elif before.channel and not after.channel:
+        # Find active session and close it
+        session = await execute(
+            """SELECT join_ts FROM voice_sessions 
+               WHERE guild_id = ? AND user_id = ? AND leave_ts IS NULL
+               ORDER BY join_ts DESC LIMIT 1""",
+            (guild_id, user_id)
+        )
+        # Note: execute doesn't return rows, need to use fetchone
+        from core.db import fetchone
+        session = await fetchone(
+            """SELECT join_ts FROM voice_sessions 
+               WHERE guild_id = ? AND user_id = ? AND leave_ts IS NULL
+               ORDER BY join_ts DESC LIMIT 1""",
+            (guild_id, user_id)
+        )
+        
+        if session:
+            join_ts = session["join_ts"]
+            session_minutes = max(1, (now_ts - join_ts) // 60)  # Minimum 1 minute
+            
+            # Close session
+            await execute(
+                """UPDATE voice_sessions SET leave_ts = ?, minutes = ?
+                   WHERE guild_id = ? AND user_id = ? AND join_ts = ? AND leave_ts IS NULL""",
+                (now_ts, session_minutes, guild_id, user_id, join_ts)
+            )
+            
+            # Update activity_daily
+            from core.db import add_vc_minutes
+            await add_vc_minutes(guild_id, user_id, session_minutes)
+            
+            print(f"  ↳ Recorded VC session: {member.name} - {session_minutes} minutes")
+    
+    # Continue with existing voice tracking logic
     """Handle voice state updates - track VC time and Event 2 participation"""
     if member.bot:
         return
@@ -181,27 +517,42 @@ async def on_voice_state_update(member, before, after):
             seconds = (datetime.datetime.now(datetime.UTC) - join_time).total_seconds()
             minutes = int(seconds // 60)
             if minutes > 0:
-                uid = str(member.id)
-                # Optimization: Use default data template
-                from core.data import _DEFAULT_USER_DATA, _user_data_cache
-                if uid not in xp_data:
-                    xp_data[uid] = _DEFAULT_USER_DATA.copy()
-                    _user_data_cache[uid] = xp_data[uid]
-                user_data = xp_data[uid]
-                user_data["vc_minutes"] = user_data.get("vc_minutes", 0) + minutes
-                _user_data_cache[uid] = user_data
-                save_xp_data()
+                guild_id = member.guild.id
+                from core.data import record_vc_minutes
+                await record_vc_minutes(guild_id, member.id, minutes)
                 
-                xp_gained = minutes * VC_XP
-                base_mult = get_channel_multiplier(channel_id)
-                await add_xp(member.id, xp_gained, member=member, base_multiplier=base_mult)
-                print(f"Added {xp_gained} VC XP to {member.name} ({minutes} minutes) (channel mult {base_mult}x)")
+                # V3 Progression: VC minutes tracked for Activity/WAS, not XP
+                print(f"Tracked {minutes} VC minutes for {member.name}")
     
     elif before.channel and after.channel and before.channel != after.channel:
         print(f"{member.name} switched from {before.channel.name} to {after.channel.name}")
 
 async def on_raw_reaction_add(payload):
-    """Handle reaction events for obedience events"""
+    """Handle reaction events for obedience events and order verification"""
+    # Record reaction event for order verification
+    if payload.guild_id and payload.user_id:
+        guild_id = payload.guild_id
+        user_id = payload.user_id
+        
+        # Check if user is a bot
+        guild = bot.get_guild(guild_id) if bot else None
+        if guild:
+            member = guild.get_member(user_id)
+            if member and not member.bot:
+                channel_id = payload.channel_id
+                emoji = payload.emoji
+                message_id = payload.message_id
+                
+                # Check if channel is a forum channel
+                channel = guild.get_channel(channel_id)
+                is_forum = isinstance(channel, discord.ForumChannel) if channel else False
+                
+                from core.db import record_reaction_event, bump_reaction
+                await record_reaction_event(guild_id, user_id, channel_id, emoji, message_id, is_forum)
+                await bump_reaction(guild_id, user_id)
+                print(f"  ↳ Recorded reaction event for user {member.name if member else user_id}")
+    
+    # Handle event reactions
     await handle_event_reaction(payload)
 
 async def on_command_error(ctx, error):
@@ -237,4 +588,34 @@ async def on_member_remove(member):
         del xp_data[user_id]
         save_xp_data()
         print(f"Erased progress for {member.name} (ID: {member.id}) - user left server")
+
+async def on_member_join(member):
+    """Handle new member join - give Unverified role and send welcome message"""
+    if member.guild.id not in ALLOWED_GUILDS:
+        return
+    
+    if member.bot:
+        return
+    
+    from systems.onboarding import (
+        get_role_id, send_onboarding_welcome, has_bad_pup_role
+    )
+    
+    # Give Unverified role
+    unverified_role_id = get_role_id("Unverified")
+    if unverified_role_id:
+        role = member.guild.get_role(unverified_role_id)
+        if role:
+            try:
+                await member.add_roles(role, reason="Onboarding: New member")
+                print(f"Added Unverified role to {member.name}")
+            except Exception as e:
+                print(f"Error adding Unverified role to {member.name}: {e}")
+    
+    # Send welcome message
+    try:
+        await send_onboarding_welcome(member)
+        print(f"Sent welcome message for {member.name}")
+    except Exception as e:
+        print(f"Error sending welcome message for {member.name}: {e}")
 
