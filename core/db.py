@@ -8,7 +8,9 @@ import os
 
 # Database connection
 _db = None
-_db_path = "data/isla_bot.db"
+# Use absolute path relative to repo root (fixes Wispbyte deployment issues)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_db_path = os.path.join(_REPO_ROOT, "data", "isla_bot.db")
 
 async def init_db():
     """Initialize database and create tables if they don't exist"""
