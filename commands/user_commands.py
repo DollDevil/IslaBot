@@ -1024,8 +1024,6 @@ def register_commands(bot_instance):
         return embed
     
     # Profile commands
-    profile_group = app_commands.Group(name="profile", description="Profile commands")
-    
     @bot.tree.command(name="profile", description="View your profile or another user's profile")
     @app_commands.describe(member="The member to view (optional, defaults to you)")
     async def profile(interaction: discord.Interaction, member: discord.Member = None):
@@ -1066,8 +1064,6 @@ def register_commands(bot_instance):
             await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
         else:
             await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
-    
-    bot.tree.add_command(profile_group)
     
     # Rank commands
     rank_group = app_commands.Group(name="rank", description="Rank progress commands")
