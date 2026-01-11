@@ -7,7 +7,7 @@ import json
 from core.db import (
     init_db, close_db, upsert_user_profile, upsert_economy_balance,
     bump_message, add_vc_minutes, bump_event, get_activity_7d,
-    get_inventory_items, get_equipped_items, import_json_to_db,
+    get_inventory_items, get_equipped_items,
     fetchone, execute, _now_iso
 )
 
@@ -18,13 +18,13 @@ xp_data = {}
 _db_initialized = False
 
 async def initialize_database():
-    """Initialize database and import JSON if exists"""
+    """Initialize database (V3: JSON import removed)"""
     global _db_initialized
     if _db_initialized:
         return
     
     await init_db()
-    await import_json_to_db()
+    # V3: import_json_to_db removed (XP/Level system deprecated)
     _db_initialized = True
 
 async def shutdown_database():
@@ -37,8 +37,8 @@ def load_xp_data():
     pass
 
 async def import_json_to_db_async():
-    """Import JSON to DB (called from main.py)"""
-    await import_json_to_db()
+    """Legacy function - V3: JSON import removed (XP/Level deprecated)"""
+    pass
 
 def save_xp_data(force=False):
     """Legacy function - now does nothing (data is in DB)"""
@@ -54,22 +54,14 @@ def _get_guild_id(guild_id=None, guild=None):
     return 0
 
 async def get_xp(user_id, guild_id=None, guild=None):
-    """Get user's XP"""
-    gid = _get_guild_id(guild_id, guild)
-    row = await fetchone(
-        "SELECT xp FROM user_profile WHERE guild_id = ? AND user_id = ?",
-        (gid, int(user_id))
-    )
-    return row["xp"] if row else 0
+    """Legacy function - V3: XP system removed, always returns 0"""
+    # V3 Migration: XP/Level system deprecated
+    return 0
 
 async def get_level(user_id, guild_id=None, guild=None):
-    """Get user's level"""
-    gid = _get_guild_id(guild_id, guild)
-    row = await fetchone(
-        "SELECT level FROM user_profile WHERE guild_id = ? AND user_id = ?",
-        (gid, int(user_id))
-    )
-    return row["level"] if row else 1
+    """Legacy function - V3: Level system removed, always returns 1"""
+    # V3 Migration: XP/Level system deprecated
+    return 1
 
 async def get_coins(user_id, guild_id=None, guild=None):
     """Get user's coin balance"""

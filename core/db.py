@@ -27,8 +27,6 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS user_profile (
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
-            xp INTEGER DEFAULT 0,
-            level INTEGER DEFAULT 1,
             coins INTEGER DEFAULT 0,
             times_gambled INTEGER DEFAULT 0,
             total_wins INTEGER DEFAULT 0,
@@ -37,6 +35,16 @@ async def init_db():
             PRIMARY KEY (guild_id, user_id)
         )
     """)
+    
+    # Migration: Drop xp/level columns if they exist (V3 migration)
+    try:
+        await _db.execute("ALTER TABLE user_profile DROP COLUMN xp")
+    except Exception:
+        pass  # Column doesn't exist
+    try:
+        await _db.execute("ALTER TABLE user_profile DROP COLUMN level")
+    except Exception:
+        pass  # Column doesn't exist
     
     await _db.execute("""
         CREATE TABLE IF NOT EXISTS activity_daily (
@@ -507,6 +515,10 @@ async def init_db():
     await _db.commit()
     print(f"[+] Database initialized at {_db_path}")
 
+def get_db_path():
+    """Get the database path (for diagnostics)"""
+    return _db_path
+
 async def close_db():
     """Close database connection"""
     global _db
@@ -551,42 +563,38 @@ def _today_str():
     """Get today's date as YYYY-MM-DD string"""
     return datetime.datetime.now(datetime.UTC).date().isoformat()
 
-async def upsert_user_profile(guild_id: int, user_id: int, xp: int = None, level: int = None, coins: int = None, 
+async def upsert_user_profile(guild_id: int, user_id: int, coins: int = None, 
                                times_gambled: int = None, total_wins: int = None, total_spent: int = None):
-    """Upsert user profile"""
+    """Upsert user profile (V3: XP/Level removed)"""
     now = _now_iso()
     
     # Get existing values if not provided
     existing = await fetchone(
-        "SELECT xp, level, coins, times_gambled, total_wins, total_spent FROM user_profile WHERE guild_id = ? AND user_id = ?",
+        "SELECT coins, times_gambled, total_wins, total_spent FROM user_profile WHERE guild_id = ? AND user_id = ?",
         (guild_id, user_id)
     )
     
     if existing:
-        xp = xp if xp is not None else existing["xp"]
-        level = level if level is not None else existing["level"]
         coins = coins if coins is not None else existing["coins"]
         times_gambled = times_gambled if times_gambled is not None else existing["times_gambled"]
         total_wins = total_wins if total_wins is not None else existing["total_wins"]
         total_spent = total_spent if total_spent is not None else existing["total_spent"]
         
         await execute(
-            """UPDATE user_profile SET xp = ?, level = ?, coins = ?, times_gambled = ?, total_wins = ?, total_spent = ?, updated_at = ?
+            """UPDATE user_profile SET coins = ?, times_gambled = ?, total_wins = ?, total_spent = ?, updated_at = ?
                WHERE guild_id = ? AND user_id = ?""",
-            (xp, level, coins, times_gambled, total_wins, total_spent, now, guild_id, user_id)
+            (coins, times_gambled, total_wins, total_spent, now, guild_id, user_id)
         )
     else:
-        xp = xp or 0
-        level = level or 1
         coins = coins or 0
         times_gambled = times_gambled or 0
         total_wins = total_wins or 0
         total_spent = total_spent or 0
         
         await execute(
-            """INSERT INTO user_profile (guild_id, user_id, xp, level, coins, times_gambled, total_wins, total_spent, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (guild_id, user_id, xp, level, coins, times_gambled, total_wins, total_spent, now)
+            """INSERT INTO user_profile (guild_id, user_id, coins, times_gambled, total_wins, total_spent, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (guild_id, user_id, coins, times_gambled, total_wins, total_spent, now)
         )
 
 async def bump_message(guild_id: int, user_id: int):
@@ -607,7 +615,7 @@ async def add_vc_minutes(guild_id: int, user_id: int, minutes: int):
     now = _now_iso()
     
     await execute(
-        """INSERT INTO activity_daily (guild_id, user_id, day, messages, vc_minutes, events, presence_ticks, updated_at)
+        """INSERT INTO activity_daily (guild_id, user_id, day, messages_count, vc_minutes, events, presence_ticks, updated_at)
            VALUES (?, ?, ?, 0, ?, 0, 0, ?)
            ON CONFLICT(guild_id, user_id, day) DO UPDATE SET vc_minutes = vc_minutes + ?, updated_at = ?""",
         (guild_id, user_id, day, minutes, now, minutes, now)
@@ -619,7 +627,7 @@ async def bump_event(guild_id: int, user_id: int):
     now = _now_iso()
     
     await execute(
-        """INSERT INTO activity_daily (guild_id, user_id, day, messages, vc_minutes, events, presence_ticks, updated_at)
+        """INSERT INTO activity_daily (guild_id, user_id, day, messages_count, vc_minutes, events, presence_ticks, updated_at)
            VALUES (?, ?, ?, 0, 0, 1, 0, ?)
            ON CONFLICT(guild_id, user_id, day) DO UPDATE SET events = events + 1, updated_at = ?""",
         (guild_id, user_id, day, now, now)
@@ -881,99 +889,11 @@ async def cleanup_expired_events():
     print(f"[+] Cleaned up expired event data (older than retention windows)")
 
 async def import_json_to_db(json_path: str = "data/xp.json"):
-    """Import existing JSON data into database (one-time migration)"""
-    if not os.path.exists(json_path):
-        print(f"[!] JSON file not found: {json_path}, skipping import")
-        return
-    
-    try:
-        with open(json_path, "r") as f:
-            xp_data = json.load(f)
-    except Exception as e:
-        print(f"[!] Error reading JSON file: {e}")
-        return
-    
-    if not xp_data:
-        print("[!] JSON file is empty, skipping import")
-        return
-    
-    print(f"[*] Importing {len(xp_data)} users from JSON to database...")
-    
-    # Use guild_id = 0 for legacy data (not guild-aware)
-    guild_id = 0
-    
-    imported = 0
-    for user_id_str, user_data in xp_data.items():
-        try:
-            user_id = int(user_id_str)
-            
-            # Import profile
-            xp = user_data.get("xp", 0)
-            level = user_data.get("level", 1)
-            coins = user_data.get("coins", 0)
-            times_gambled = user_data.get("times_gambled", 0)
-            total_wins = user_data.get("total_wins", 0)
-            total_spent = user_data.get("total_spent", 0)
-            
-            await upsert_user_profile(guild_id, user_id, xp, level, coins, times_gambled, total_wins, total_spent)
-            
-            # Import economy balance
-            coins_lifetime = user_data.get("coins_lifetime", coins)
-            if coins_lifetime != coins:
-                await upsert_economy_balance(guild_id, user_id, coins_lifetime - coins)
-            
-            # Import inventory items
-            for badge in user_data.get("badges_owned", []):
-                await execute(
-                    """INSERT OR IGNORE INTO inventory_items (guild_id, user_id, item_type, item_id, acquired_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (guild_id, user_id, "badge", badge, _now_iso())
-                )
-            
-            for collar in user_data.get("collars_owned", []):
-                await execute(
-                    """INSERT OR IGNORE INTO inventory_items (guild_id, user_id, item_type, item_id, acquired_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (guild_id, user_id, "collar", collar, _now_iso())
-                )
-            
-            for interface in user_data.get("interfaces_owned", []):
-                await execute(
-                    """INSERT OR IGNORE INTO inventory_items (guild_id, user_id, item_type, item_id, acquired_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (guild_id, user_id, "interface", interface, _now_iso())
-                )
-            
-            # Import equipped items
-            equipped_collar = user_data.get("equipped_collar")
-            equipped_badge = user_data.get("equipped_badge")
-            if equipped_collar or equipped_badge:
-                await execute(
-                    """INSERT OR REPLACE INTO inventory_equipped (guild_id, user_id, equipped_collar, equipped_badge, equipped_interface, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (guild_id, user_id, equipped_collar, equipped_badge, None, _now_iso())
-                )
-            
-            # Import activity totals (create a single daily row with totals)
-            messages_sent = user_data.get("messages_sent", 0)
-            vc_minutes = user_data.get("vc_minutes", 0)
-            event_participations = user_data.get("event_participations", 0)
-            
-            if messages_sent > 0 or vc_minutes > 0 or event_participations > 0:
-                day = _today_str()
-                await execute(
-                    """INSERT OR REPLACE INTO activity_daily (guild_id, user_id, day, messages, vc_minutes, events, presence_ticks, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, 0, ?)""",
-                    (guild_id, user_id, day, messages_sent, vc_minutes, event_participations, _now_iso())
-                )
-            
-            imported += 1
-            
-        except Exception as e:
-            print(f"[!] Error importing user {user_id_str}: {e}")
-            continue
-    
-    print(f"[+] Successfully imported {imported} users from JSON to database")
+    """Legacy JSON import - V3: XP/Level removed, this function is now a no-op"""
+    # V3 Migration: XP/Level system removed, JSON import no longer needed
+    # Coins and other data should already be in the database from previous migrations
+    print("[!] import_json_to_db is deprecated (V3: XP/Level removed). Skipping JSON import.")
+    return
 
 # Loan helper functions
 async def get_loan_status(guild_id: int, user_id: int):

@@ -112,6 +112,28 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
     
+    # PHASE 0: DEBUG STARTUP BANNER
+    print("=" * 60)
+    print("DEBUG STARTUP DIAGNOSTICS")
+    print("=" * 60)
+    print(f"Current working directory: {os.getcwd()}")
+    from core.db import get_db_path
+    db_path = get_db_path()
+    print(f"Resolved DB path: {db_path}")
+    print(f"DB path exists: {os.path.exists(db_path)}")
+    print(f"DB directory exists: {os.path.exists(os.path.dirname(db_path))}")
+    
+    # Count commands before sync
+    commands_before = list(bot.tree.get_commands())
+    commands_count = len(commands_before)
+    print(f"Discovered app commands (before sync): {commands_count}")
+    if commands_count > 0:
+        command_names = [cmd.name for cmd in commands_before[:10]]  # Show first 10
+        print(f"Command names (first 10): {', '.join(command_names)}")
+        if commands_count > 10:
+            print(f"... and {commands_count - 10} more")
+    print("=" * 60)
+    
     # Leave any guilds that aren't in the allowed list
     for guild in bot.guilds:
         if guild.id not in ALLOWED_GUILDS:
@@ -149,12 +171,27 @@ async def on_ready():
     tasks.personal_order_reminders_task.start()
     print("Background tasks started: auto-save, promo rotation scheduler, V3 progression jobs (daily/weekly), event cleanup, daily orders drop, and personal order reminders")
     
-    # Sync slash commands
+    # Sync slash commands (global + per-guild for faster propagation)
+    sync_results = {}
+    
+    # Global sync
     try:
-        synced = await bot.tree.sync()
-        print(f"[+] Synced {len(synced)} slash command(s)")
+        synced_global = await bot.tree.sync()
+        sync_results["global"] = len(synced_global)
+        print(f"[+] Global sync: {len(synced_global)} command(s)")
     except Exception as e:
-        print(f"[-] Failed to sync slash commands: {e}")
+        sync_results["global"] = f"ERROR: {e}"
+        print(f"[-] Global sync failed: {e}")
+    
+    # Per-guild sync for faster propagation in allowed guilds
+    for guild_id in ALLOWED_GUILDS:
+        try:
+            synced_guild = await bot.tree.sync(guild=discord.Object(id=guild_id))
+            sync_results[f"guild_{guild_id}"] = len(synced_guild)
+            print(f"[+] Guild sync ({guild_id}): {len(synced_guild)} command(s)")
+        except Exception as e:
+            sync_results[f"guild_{guild_id}"] = f"ERROR: {e}"
+            print(f"[-] Guild sync ({guild_id}) failed: {e}")
 
 # Bot login
 TOKEN = os.getenv('DISCORD_TOKEN')

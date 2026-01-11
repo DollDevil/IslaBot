@@ -216,18 +216,69 @@ def register_commands(bot_instance):
         print(f"Event killed by {interaction.user.name}. Cooldown until {events.event_cooldown_until.strftime('%H:%M:%S UTC')}")
     
     @bot.tree.command(name="sync", description="Sync slash commands. Admin only.")
-    async def sync_commands(interaction: discord.Interaction):
+    @app_commands.describe(clear_commands="Dangerous: Clear all commands before syncing (default: false)")
+    async def sync_commands(interaction: discord.Interaction, clear_commands: bool = False):
         """Sync slash commands (Admin only)"""
         if not await check_admin_command_permissions(interaction):
             return
         
+        from core.config import ALLOWED_GUILDS
+        
+        # Count commands before sync
+        commands_before = list(bot.tree.get_commands())
+        commands_count_before = len(commands_before)
+        
+        sync_results = {}
+        
+        # Optional: Clear commands (dangerous)
+        if clear_commands:
+            try:
+                # Clear global commands
+                bot.tree.clear_commands(guild=None)
+                # Clear per-guild commands
+                for guild_id in ALLOWED_GUILDS:
+                    bot.tree.clear_commands(guild=discord.Object(id=guild_id))
+                sync_results["cleared"] = True
+            except Exception as e:
+                sync_results["cleared"] = f"ERROR: {e}"
+                await interaction.response.send_message(f"❌ Failed to clear commands: {e}", ephemeral=True)
+                return
+        
+        # Global sync
         try:
-            synced = await bot.tree.sync()
-            await interaction.response.send_message(f"✅ Synced {len(synced)} slash command(s)", ephemeral=True)
-            print(f"✅ Manually synced {len(synced)} slash command(s) by {interaction.user.name}")
+            synced_global = await bot.tree.sync()
+            sync_results["global"] = len(synced_global)
         except Exception as e:
-            await interaction.response.send_message(f"❌ Failed to sync slash commands: {e}", ephemeral=True)
-            print(f"❌ Failed to sync slash commands: {e}")
+            sync_results["global"] = f"ERROR: {e}"
+        
+        # Per-guild sync for faster propagation
+        for guild_id in ALLOWED_GUILDS:
+            try:
+                synced_guild = await bot.tree.sync(guild=discord.Object(id=guild_id))
+                sync_results[f"guild_{guild_id}"] = len(synced_guild)
+            except Exception as e:
+                sync_results[f"guild_{guild_id}"] = f"ERROR: {e}"
+        
+        # Build response embed
+        embed = discord.Embed(
+            title="🔄 Command Sync Results",
+            color=0x4ec200 if all(isinstance(v, int) for v in sync_results.values() if v != True) else 0xff000d
+        )
+        
+        embed.add_field(name="Commands Before Sync", value=str(commands_count_before), inline=True)
+        
+        if clear_commands:
+            embed.add_field(name="Commands Cleared", value="✅ Yes" if sync_results.get("cleared") == True else f"❌ {sync_results.get('cleared', 'Unknown')}", inline=True)
+        
+        embed.add_field(name="Global Sync", value=str(sync_results.get("global", "N/A")), inline=True)
+        
+        for guild_id in ALLOWED_GUILDS:
+            key = f"guild_{guild_id}"
+            if key in sync_results:
+                embed.add_field(name=f"Guild {guild_id}", value=str(sync_results[key]), inline=True)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        print(f"✅ Manual sync by {interaction.user.name}: {sync_results}")
     
     # Legacy Level/XP admin commands removed - V3 progression system only
     
