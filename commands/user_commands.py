@@ -1068,7 +1068,7 @@ def register_commands(bot_instance):
     # Rank commands
     rank_group = app_commands.Group(name="rank", description="Rank progress commands")
     
-    @bot.tree.command(name="rank", description="View your personal rank progress")
+    @rank_group.command(name="view", description="View your personal rank progress")
     @app_commands.describe(member="The member to view (optional, defaults to you)")
     async def rank(interaction: discord.Interaction, member: discord.Member = None):
         """View personal rank progress"""
