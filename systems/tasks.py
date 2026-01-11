@@ -7,22 +7,16 @@ import datetime
 import random
 
 from core.config import (
-    EVENT_CHANNEL_ID, EVENT_SCHEDULE, EVENT_TIER_MAP, VC_XP,
-    VC_XP_TRACK_CHANNELS, NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS,
-    EXCLUDED_ROLE_SET, USER_COMMAND_CHANNEL_ID
+    NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS,
+    EXCLUDED_ROLE_SET
 )
-from core.data import xp_data, save_xp_data
-from systems.xp import add_xp
+# Legacy XP/Level system removed - V3 progression only
 from core.utils import resolve_category_id, get_channel_multiplier, get_timezone, USE_PYTZ
-from systems.events import active_event, start_obedience_event, events_enabled
-from core.db import fetchall, execute, _today_str, _now_iso
-from systems.progression import compute_final_rank, compute_readiness_pct, compute_blocker, RANK_LADDER, GATES
+# Legacy event system removed
+from core.db import fetchall, fetchone, execute, _today_str, _now_iso, get_announcements_channel_id, get_promo_rotation_state, update_promo_rotation_state
+from systems.progression import compute_final_rank, compute_readiness_pct, compute_blocker, compute_held_rank, RANK_LADDER, GATES
 
-# Global state for tracking
-last_event_times_today = set()
-last_daily_check_times_today = set()
-
-# Global flag to stop all automated messages
+# Global flag to stop all automated messages (legacy, kept for compatibility)
 automated_messages_enabled = True
 
 # Bot instance (set by main.py)
@@ -66,52 +60,44 @@ def get_next_scheduled_time(hour: int, minute: int) -> int:
     
     return int(target_utc.timestamp())
 
-async def send_tier3_pre_announcement(guild):
-    """Send pre-announcement for Tier 3 events 5 minutes before they start."""
-    channel = guild.get_channel(EVENT_CHANNEL_ID)
+async def send_throne_announcement(guild):
+    """Send Throne announcement message."""
+    channel_id = await get_announcements_channel_id(guild.id)
+    channel = guild.get_channel(channel_id)
     if not channel:
-        return
+        print(f"Announcements channel not found (ID: {channel_id})")
+        return False
     
+    quote_variations = [
+        "A good puppy knows where to show appreciation. Throne's waiting.",
+        "I wonder who's going to surprise me next.",
+        "You already know what to do. My Throne is there.",
+        "I don't need to ask twice. Check my Throne.",
+        "If you're here, you should already be on Throne.",
+    ]
+    
+    from core.utils import impact_icon
     embed = discord.Embed(
-        description="\nS̵̛̳̜͕͓͎͚̹̯̟͔̃͌̉͠ȯ̵͕̣͊͛̓̅̆̊̉͌̚͘͝m̶̢̨͍̺͔͖̩̼͇̪̰̮͐͋̑̆̓͐̀ͅè̸̡̢̤̺̩̠̼̲̖̰̫̼̜̊̽͗̉̇̑ṭ̷̨̛̦̘̻̙̼̪̩̫̖̘͋́̎̄͌̓̕͝h̸̩̪͚̘̯͉̮̩̼̬͕͂̂͂̄i̷̡̨̨̫̳̟͍͎̟̯͉̳̞̩̓̄͆͛̕n̴̲͔͎̊̅̈́͂̀͒̔̈́̆͂̾͠g̸̨̢̩̳̣͔̹͇̩͚̺̳͕̣͕͋̍̈́̾̓͊̄̿̓͝ ̸͔͚̟̪̺̝̳̻͍̺̟͛̀́̀̍́̋͜͜͜͝ï̵̪̘̦̬͎̗͊̊͊̍̂̊s̷̤̰̳͇̰̥̹͖̤̼͌̃͑̾̒͗͑̓̅́͑̚̚͜ ̷̡̡̼̻̳̻̠̯̜̘͇̟̠̱̖̎́̀̔̍͂̇̄̏̈́ơ̵̧̘̮̊̽̑̆̎̿̂̍̋͑̈́͘n̶̘̞̮̺̫̭̩̜̜͎̈́̓̋̓̾͊̇̆́͂̍̐͠ ̵̱̊̂̕͠t̷̛͙̗͍̩̞̥̹͂̾͋̅̀̄̉̐͐̈́̂͘͠h̴̼͍̙̬͖̍̄̓̀e̴̢̛̅͒͊̽͐̚͝ ̴̨̛̭̱̖̜̣̝̝̓̅̓̀̈́̉̿͂̆̂͂͜͝͝ẃ̴̭̗̳̳̳͂͗̇̍̿͑a̶͚͚͕̠̳̭̘͐̍ÿ̷̛̫͕̘͍́̽̿̚͠.̶̳͍̩̇̊͜.̷̜̼̌͐̔.̶̧̨̩̳̮̟̖͈̘͕̻̣̱̎͒̀̈́͘\n\n◊ ¿°ᵛ˘ æ¢ɲæ ˘ɲ±æ≤ ┍ææ≥, \"˘æ\"¿˘, Әɲ≥",
+        description=f"*{random.choice(quote_variations)}*\n\n[Go to Throne](https://throne.com/lsla/item/1230a476-4752-4409-9583-9313e60686fe)",
         color=0xff000d,
     )
-    embed.set_image(url="https://i.imgur.com/gvhIpAG.gif")
+    embed.set_image(url="https://i.imgur.com/Q6HAYBP.png")
+    embed.set_author(name="Throne", icon_url=impact_icon("positive"))
     
     try:
-        await channel.send(embed=embed)
-        print("Sent Tier 3 pre-announcement")
-    except Exception as e:
-        print(f"Failed to send Tier 3 pre-announcement: {e}")
-
-async def send_daily_check_dailycommand(guild):
-    """Send Daily Check message for /daily command."""
-    daily_channel = guild.get_channel(USER_COMMAND_CHANNEL_ID)
-    if not daily_channel:
-        print(f"Daily check channel not found (ID: {USER_COMMAND_CHANNEL_ID})")
-        return False
-    
-    embed = discord.Embed(
-        title="Daily Check <:kisses:1449998044446593125>",
-        description="Have you checked in today?\nYour coins are waiting.\n\nType `/daily` in <#1450107538019192832> to claim your allocation.",
-        color=0xcdb623,
-    )
-    embed.set_thumbnail(url="https://i.imgur.com/zMiZC5b.png")
-    embed.set_footer(text="Resets daily at 6:00 PM GMT")
-    
-    try:
-        await daily_channel.send(embed=embed)
-        print(f"✅ Daily Check (/daily) sent to {daily_channel.name}")
+        await channel.send("@everyone", embed=embed)
+        print(f"✅ Throne announcement sent to {channel.name}")
         return True
     except Exception as e:
-        print(f"Failed to send Daily Check (/daily): {e}")
+        print(f"Failed to send Throne announcement: {e}")
         return False
 
-async def send_daily_check_throne(guild):
-    """Send Daily Check message for Throne coffee."""
-    throne_channel = guild.get_channel(EVENT_CHANNEL_ID)
-    if not throne_channel:
-        print(f"Throne check channel not found (ID: {EVENT_CHANNEL_ID})")
+async def send_coffee_announcement(guild):
+    """Send Coffee announcement message."""
+    channel_id = await get_announcements_channel_id(guild.id)
+    channel = guild.get_channel(channel_id)
+    if not channel:
+        print(f"Announcements channel not found (ID: {channel_id})")
         return False
     
     description_variants = [
@@ -124,6 +110,7 @@ async def send_daily_check_throne(guild):
         "I could handle the day without coffee…\nBut I'd rather not have to.",
     ]
     
+    from core.utils import impact_icon
     embed = discord.Embed(
         title="Coffee Check ☕",
         description=f"{random.choice(description_variants)}\n\n[Buy Coffee](https://throne.com/lsla/item/1230a476-4752-4409-9583-9313e60686fe)",
@@ -131,83 +118,15 @@ async def send_daily_check_throne(guild):
     )
     embed.set_thumbnail(url="https://i.imgur.com/gSoHGEN.png")
     embed.set_footer(text="I remember who takes care of me.")
+    embed.set_author(name="Coffee", icon_url=impact_icon("positive"))
     
     try:
-        await throne_channel.send("@everyone", embed=embed)
-        print(f"✅ Daily Check (Throne) sent to {throne_channel.name}")
+        await channel.send("@everyone", embed=embed)
+        print(f"✅ Coffee announcement sent to {channel.name}")
         return True
     except Exception as e:
-        print(f"Failed to send Daily Check (Throne): {e}")
+        print(f"Failed to send Coffee announcement: {e}")
         return False
-
-async def send_daily_check_slots(guild):
-    """Send Daily Check message for Slots."""
-    slots_channel = guild.get_channel(EVENT_CHANNEL_ID)
-    if not slots_channel:
-        print(f"Slots check channel not found (ID: {EVENT_CHANNEL_ID})")
-        return False
-    
-    description_variants = [
-        "I'm in the mood to watch you try your luck.\nGo play my slots.",
-        "I enjoy seeing effort turn into results.\nSlots would be a good use of your time right now.",
-        "I wonder how lucky you're feeling today.\nWhy don't you find out for me?",
-        "Luck favors the attentive.\nYou should give my slots a try.",
-        "I'm watching.\nThis would be a good moment to play.",
-        "Sometimes obedience looks like initiative.\nSlots. Now.",
-        "I like it when you make the right choice on your own.\nMy slots are waiting.",
-    ]
-    
-    embed = discord.Embed(
-        title="Slots Check 🎲",
-        description=f"{random.choice(description_variants)}\n\n[Buy Slots](https://islaexe.itch.io/islas-slots)",
-        color=0xcd6032,
-    )
-    embed.set_thumbnail(url="https://i.imgur.com/KEnVDdy.png")
-    embed.set_footer(text="This is part of your role.")
-    
-    try:
-        await slots_channel.send("@everyone", embed=embed)
-        print(f"✅ Daily Check (Slots) sent to {slots_channel.name}")
-        return True
-    except Exception as e:
-        print(f"Failed to send Daily Check (Slots): {e}")
-        return False
-
-@tasks.loop(minutes=1)
-async def award_vc_xp():
-    """Award XP every minute to users in tracked voice channels"""
-    for guild in bot.guilds:
-        for vc in guild.voice_channels:
-            if vc.id not in VC_XP_TRACK_CHANNELS:
-                continue
-            
-            for member in vc.members:
-                if member.bot:
-                    continue
-                if any(int(role.id) in EXCLUDED_ROLE_SET for role in member.roles):
-                    print(f"Skipped VC XP for {member.name} (has excluded role)")
-                    continue
-                category_id = resolve_category_id(vc)
-                if category_id in NON_XP_CATEGORY_IDS or vc.id in NON_XP_CHANNEL_IDS:
-                    print(f"Skipped VC XP for {member.name} (excluded VC/channel/category)")
-                    continue
-                
-                xp_to_award = VC_XP
-                if active_event and active_event.get("type") == 2:
-                    event_start = active_event.get("started_at")
-                    if event_start:
-                        elapsed = (datetime.datetime.now(datetime.UTC) - event_start).total_seconds()
-                        if elapsed <= 300:
-                            xp_to_award = VC_XP * 2
-                
-                guild_id = guild.id if guild else 0
-                from core.db import add_vc_minutes
-                await add_vc_minutes(guild_id, member.id, 1)
-                
-                base_mult = get_channel_multiplier(vc.id)
-                await add_xp(member.id, xp_to_award, member=member, base_multiplier=base_mult, guild_id=guild_id)
-                event_bonus = " (Event 2 double XP)" if xp_to_award > VC_XP else ""
-                print(f"Awarded {xp_to_award} VC XP to {member.name} in {vc.name} (channel mult {base_mult}x){event_bonus}")
 
 @tasks.loop(minutes=5)
 async def auto_save():
@@ -242,6 +161,12 @@ async def v3_daily_job():
     print(f"Running V3 daily job at {now_uk.strftime('%Y-%m-%d %H:%M:%S')} UK time")
     
     try:
+        # Convert overdue loans to debt (run once, processes all guilds)
+        from core.data import convert_overdue_loans
+        converted = await convert_overdue_loans()
+        if converted > 0:
+            print(f"Converted {converted} overdue loans to debt")
+        
         # Get all active users (users with activity in last 30 days)
         thirty_days_ago = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=30)).date().isoformat()
         
@@ -260,7 +185,7 @@ async def v3_daily_job():
                 user_id = row["user_id"]
                 
                 try:
-                            # 1. Apply inactivity tax
+                    # 1. Apply inactivity tax
                     await _apply_inactivity_tax(guild_id, user_id)
                     
                     # 2. Obedience decay is already handled in compute_obedience14
@@ -323,18 +248,57 @@ async def _apply_inactivity_tax(guild_id: int, user_id: int):
             )
 
 async def _recompute_rank_cache(guild_id: int, user_id: int):
-    """Recompute and cache rank information for a user"""
-    from core.data import get_lce
+    """Recompute and cache rank information for a user (with held rank system)"""
+    from core.data import get_lce, get_debt
+    
+    # Get current held rank from cache
+    current_cache = await fetchone(
+        "SELECT held_rank_idx, at_risk, at_risk_since FROM rank_cache WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id)
+    )
+    current_held_rank_idx = current_cache["held_rank_idx"] if current_cache and current_cache.get("held_rank_idx") is not None else 0
+    current_at_risk = current_cache["at_risk"] if current_cache and current_cache.get("at_risk") else 0
+    at_risk_since = current_cache["at_risk_since"] if current_cache else None
     
     lce = await get_lce(guild_id, user_id)
+    debt = await get_debt(guild_id, user_id)
     rank_data = await compute_final_rank(guild_id, user_id, lce)
     
-    # Get next rank for readiness calculation
+    # Compute held rank with promotion/demotion logic
+    held_rank_data = await compute_held_rank(
+        guild_id, user_id, 
+        rank_data["coin_rank"], 
+        rank_data["eligible_rank"],
+        current_held_rank_idx,
+        debt
+    )
+    
+    held_rank = held_rank_data["held_rank"]
+    held_rank_idx = held_rank_data["held_rank_idx"]
+    at_risk = held_rank_data["at_risk"]
+    
+    # Handle at-risk persistence (72h)
+    now_iso = _now_iso()
+    if at_risk == 1:
+        if not at_risk_since:
+            at_risk_since = now_iso  # Set timestamp when first marked at-risk
+        else:
+            # Check if 72h has passed
+            at_risk_dt = datetime.datetime.fromisoformat(at_risk_since.replace('Z', '+00:00'))
+            now_dt = datetime.datetime.fromisoformat(now_iso.replace('Z', '+00:00'))
+            if (now_dt - at_risk_dt).total_seconds() >= 72 * 3600:
+                # 72h passed, clear at-risk if gates pass
+                if at_risk == 0:  # This should be re-computed, but for safety
+                    at_risk = 0
+                    at_risk_since = None
+    else:
+        # Not at-risk, clear timestamp
+        at_risk_since = None
+    
+    # Get next rank for readiness calculation (use held_rank, not final_rank)
     rank_names = [r["name"] for r in RANK_LADDER]
-    current_rank = rank_data["final_rank"]
-    current_idx = rank_names.index(current_rank) if current_rank in rank_names else 0
-    next_idx = min(current_idx + 1, len(rank_names) - 1)
-    next_rank = rank_names[next_idx] if next_idx > current_idx else current_rank
+    next_idx = min(held_rank_idx + 1, len(rank_names) - 1)
+    next_rank = rank_names[next_idx] if next_idx > held_rank_idx else held_rank
     
     readiness_pct = await compute_readiness_pct(guild_id, user_id, next_rank)
     blocker_text = await compute_blocker(guild_id, user_id, next_rank)
@@ -362,13 +326,20 @@ async def _recompute_rank_cache(guild_id: int, user_id: int):
         if stats.get("orders_late", 0) > 2:
             failed_gates_count += 1
     
-    # Update or insert rank cache
+    # Track promotions
+    last_promotion_at = None
+    if held_rank_data.get("promoted"):
+        last_promotion_at = now_iso
+    
+    # Update or insert rank cache (include held rank fields)
     await execute(
         """INSERT OR REPLACE INTO rank_cache 
-           (guild_id, user_id, coin_rank, eligible_rank, final_rank, readiness_pct, blocker_text, computed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           (guild_id, user_id, coin_rank, eligible_rank, final_rank, held_rank_idx, at_risk, at_risk_since,
+            readiness_pct, blocker_text, computed_at, last_promotion_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (guild_id, user_id, rank_data["coin_rank"], rank_data["eligible_rank"], 
-         rank_data["final_rank"], readiness_pct, blocker_text, _now_iso())
+         rank_data["final_rank"], held_rank_idx, at_risk, at_risk_since,
+         readiness_pct, blocker_text, now_iso, last_promotion_at)
     )
 
 async def _assign_ranks_roles(guild_id: int):
@@ -541,54 +512,58 @@ async def _evaluate_soft_demotion(guild_id: int, user_id: int):
 
 
 @tasks.loop(minutes=1)
-async def daily_check_scheduler():
-    """Automatically send Daily Check messages at scheduled times."""
-    global last_daily_check_times_today
-    
-    # Check if automated messages are disabled
-    if not automated_messages_enabled:
-        return
-    
+@tasks.loop(hours=1)
+async def promo_rotation_scheduler():
+    """4-day rotation scheduler for Throne and Coffee announcements"""
     uk_tz = _get_uk_timezone()
     if uk_tz is None:
         return
     
     now_uk = datetime.datetime.now(uk_tz)
-    
     today_str = now_uk.strftime("%Y-%m-%d")
-    current_time = (now_uk.hour, now_uk.minute)
     
-    last_daily_check_times_today = {entry for entry in last_daily_check_times_today if entry.startswith(today_str)}
+    # Run once per day at 12:00 UK time (noon)
+    if now_uk.hour != 12 or now_uk.minute > 5:
+        return
     
-    daily_check_times = [
-        (19, 0, "throne"),
-        (20, 0, "slots"),
-        (22, 0, "daily"),
-    ]
-    
-    for hour, minute, check_type in daily_check_times:
-        time_diff = abs((now_uk.hour * 60 + now_uk.minute) - (hour * 60 + minute))
-        
-        if time_diff <= 1:
-            check_key = f"{today_str}_DAILY_CHECK_{check_type}_{hour:02d}:{minute:02d}"
+    for guild in bot.guilds:
+        try:
+            guild_id = guild.id
             
-            if check_key in last_daily_check_times_today:
+            # Get current rotation state
+            state = await get_promo_rotation_state(guild_id)
+            rotation_index = state["rotation_index"]
+            last_run_day = state["last_run_day"]
+            
+            # Check if already ran today
+            if last_run_day == today_str:
                 continue
             
-            for guild in bot.guilds:
-                if check_type == "throne":
-                    success = await send_daily_check_throne(guild)
-                elif check_type == "slots":
-                    success = await send_daily_check_slots(guild)
-                elif check_type == "daily":
-                    success = await send_daily_check_dailycommand(guild)
-                else:
-                    success = False
-                
+            # Rotation mapping: 0=Throne, 1=nothing, 2=Coffee, 3=nothing
+            if rotation_index == 0:
+                # Send Throne
+                success = await send_throne_announcement(guild)
                 if success:
-                    last_daily_check_times_today.add(check_key)
-                    print(f"Auto-sent Daily Check ({check_type}) at {now_uk.strftime('%H:%M:%S')} UK time")
-                    break
+                    new_index = (rotation_index + 1) % 4
+                    await update_promo_rotation_state(guild_id, new_index, today_str)
+                    print(f"✅ Promo rotation: Sent Throne (index {rotation_index} -> {new_index})")
+            
+            elif rotation_index == 2:
+                # Send Coffee
+                success = await send_coffee_announcement(guild)
+                if success:
+                    new_index = (rotation_index + 1) % 4
+                    await update_promo_rotation_state(guild_id, new_index, today_str)
+                    print(f"✅ Promo rotation: Sent Coffee (index {rotation_index} -> {new_index})")
+            
+            else:
+                # Index 1 or 3: nothing to send, just update
+                new_index = (rotation_index + 1) % 4
+                await update_promo_rotation_state(guild_id, new_index, today_str)
+                print(f"✅ Promo rotation: No announcement (index {rotation_index} -> {new_index})")
+        
+        except Exception as e:
+            print(f"Error in promo rotation scheduler for guild {guild.id}: {e}")
 
 # Optimization: Cache timezone object to avoid repeated lookups
 _cached_uk_tz = None
@@ -600,72 +575,156 @@ def _get_uk_timezone():
         _cached_uk_tz = get_timezone("Europe/London")
     return _cached_uk_tz
 
-@tasks.loop(minutes=1)
-async def event_scheduler():
-    """Automatically schedule events based on UK timezone schedule"""
-    global active_event, last_event_times_today
-    from systems.events import event_cooldown_until
-    
-    # Check if automated messages are disabled
-    if not automated_messages_enabled:
-        return
-    
-    if not events_enabled:
-        return
-    
-    if active_event:
-        return
-    if event_cooldown_until and datetime.datetime.now(datetime.UTC) < event_cooldown_until:
-        return
+# Legacy event scheduler removed - replaced with promo rotation scheduler
+
+_last_orders_drop_run = None
+
+@tasks.loop(hours=1)
+async def daily_orders_drop_task():
+    """Daily orders drop: update available orders and send announcement at reset time"""
+    global _last_orders_drop_run
     
     uk_tz = _get_uk_timezone()
     if uk_tz is None:
-        print("ERROR: Timezone support not available. Cannot schedule events. Install pytz: pip install pytz")
         return
     
     now_uk = datetime.datetime.now(uk_tz)
     today_str = now_uk.strftime("%Y-%m-%d")
-    current_time = (now_uk.hour, now_uk.minute)
     
-    last_event_times_today = {entry for entry in last_event_times_today if entry.startswith(today_str)}
+    # Run at reset time (00:00 UK, or configurable)
+    if now_uk.hour != 0 or now_uk.minute > 5:
+        return
     
-    if current_time == (23, 55):
-        tomorrow = (now_uk + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        pre_announce_key = f"{tomorrow}_TIER_3_00:00_pre_announced"
-        if pre_announce_key not in last_event_times_today:
-            for guild in bot.guilds:
-                await send_tier3_pre_announcement(guild)
-            last_event_times_today.add(pre_announce_key)
-            print(f"Sent Tier 3 pre-announcement at {now_uk.strftime('%H:%M:%S')} UK time (for event at 00:00)")
+    if _last_orders_drop_run == today_str:
+        return
     
-    for tier, scheduled_times in EVENT_SCHEDULE.items():
-        for hour, minute in scheduled_times:
-            time_diff = abs((now_uk.hour * 60 + now_uk.minute) - (hour * 60 + minute))
+    _last_orders_drop_run = today_str
+    print(f"Running daily orders drop at {now_uk.strftime('%Y-%m-%d %H:%M:%S')} UK time")
+    
+    try:
+        for guild in bot.guilds:
+            guild_id = guild.id if guild else 0
             
-            if time_diff <= 1:
-                event_key = f"{today_str}_TIER_{tier}_{hour:02d}:{minute:02d}"
+            # Get announcement channel
+            config_row = await fetchone(
+                "SELECT channel_id FROM orders_announcement_config WHERE guild_id = ?",
+                (guild_id,)
+            )
+            
+            if not config_row:
+                continue  # No channel configured
+            
+            channel_id = config_row["channel_id"]
+            channel = guild.get_channel(channel_id)
+            
+            if not channel:
+                continue
+            
+            # Clear today's orders cache (forces refresh on next /orders call)
+            # The cache is in user_commands module, so orders will refresh naturally
+            
+            # Send announcement embed
+            from core.utils import impact_icon
+            embed = discord.Embed(
+                title="Orders",
+                description="New orders available, complete them to gain my favor. \n\nRemember, I reward good pups who get their orders done, and those who don't.. well..",
+            )
+            embed.set_thumbnail(url="https://i.imgur.com/sGDoIDA.png")
+            embed.set_footer(text="Type /orders in #commands channel")
+            embed.set_author(name="Orders", icon_url=impact_icon("neutral"))
+            
+            try:
+                await channel.send(embed=embed)
+                print(f"Sent daily orders drop announcement to {channel.name} in {guild.name}")
+            except Exception as e:
+                print(f"Failed to send orders announcement in {guild.name}: {e}")
+    
+    except Exception as e:
+        print(f"Error in daily_orders_drop_task: {e}")
+
+@tasks.loop(minutes=15)
+async def personal_order_reminders_task():
+    """Send personal DM reminders for active orders with <= 2h left (for opted-in users)"""
+    try:
+        for guild in bot.guilds:
+            guild_id = guild.id if guild else 0
+            
+            # Get all opted-in users
+            opted_in_users = await fetchall(
+                "SELECT user_id FROM user_notifications WHERE guild_id = ? AND enabled = 1",
+                (guild_id,)
+            )
+            
+            for row in opted_in_users:
+                user_id = row["user_id"]
                 
-                if event_key in last_event_times_today:
-                    continue
+                try:
+                    # Get active orders for this user
+                    active_runs = await fetchall(
+                        """SELECT run_id, order_id, due_at FROM order_runs 
+                           WHERE guild_id = ? AND user_id = ? AND status = 'accepted'
+                           ORDER BY due_at""",
+                        (guild_id, user_id)
+                    )
+                    
+                    now = datetime.datetime.now(datetime.UTC)
+                    
+                    for run in active_runs:
+                        due_at = datetime.datetime.fromisoformat(run["due_at"].replace('Z', '+00:00'))
+                        time_left = (due_at - now).total_seconds()
+                        
+                        # Check if <= 2 hours left (7200 seconds)
+                        if 0 < time_left <= 7200:
+                            # Check if reminder already sent for this run
+                            reminder_sent = await fetchone(
+                                "SELECT reminder_sent_at FROM order_reminders WHERE guild_id = ? AND user_id = ? AND run_id = ?",
+                                (guild_id, user_id, run["run_id"])
+                            )
+                            
+                            if reminder_sent:
+                                continue  # Already sent
+                            
+                            # Get order name
+                            order_row = await fetchone(
+                                "SELECT name FROM orders WHERE order_id = ?",
+                                (run["order_id"],)
+                            )
+                            
+                            if not order_row:
+                                continue
+                            
+                            order_name = order_row["name"]
+                            hours_left = int(time_left / 3600)
+                            minutes_left = int((time_left % 3600) / 60)
+                            
+                            # Send DM reminder
+                            try:
+                                user = await bot.fetch_user(user_id)
+                                from core.utils import impact_icon
+                                
+                                embed = discord.Embed(
+                                    title="Order Reminder",
+                                    description=f"Your order **{order_name}** is due in {hours_left}h {minutes_left}min.\n\nComplete it on time to earn your reward.",
+                                )
+                                embed.set_author(name="Orders", icon_url=impact_icon("neutral"))
+                                
+                                await user.send(embed=embed)
+                                
+                                # Mark reminder as sent
+                                await execute(
+                                    "INSERT INTO order_reminders (guild_id, user_id, run_id, reminder_sent_at) VALUES (?, ?, ?, ?)",
+                                    (guild_id, user_id, run["run_id"], _now_iso())
+                                )
+                                
+                            except discord.Forbidden:
+                                # User has DMs disabled, skip
+                                pass
+                            except Exception as e:
+                                print(f"Failed to send reminder to user {user_id}: {e}")
                 
-                # Optimization: Pre-filter events by tier (more efficient than list comprehension)
-                available_events = [et for et, t in EVENT_TIER_MAP.items() if t == tier]
-                if not available_events:
-                    continue
-                
-                event_type = random.choice(available_events)
-                
-                for guild in bot.guilds:
-                    event_channel = guild.get_channel(EVENT_CHANNEL_ID)
-                    if event_channel:
-                        try:
-                            await start_obedience_event(guild, event_type, channel=event_channel)
-                            last_event_times_today.add(event_key)
-                            if tier == 3 and hour == 0 and minute == 0:
-                                last_event_times_today.discard(f"{today_str}_TIER_3_00:00_pre_announced")
-                            print(f"Auto-started Event {event_type} (Tier {tier}) at {now_uk.strftime('%H:%M:%S')} UK time")
-                            return
-                        except Exception as e:
-                            print(f"Failed to auto-start event {event_type}: {e}")
-                        break
+                except Exception as e:
+                    print(f"Error processing reminders for user {user_id}: {e}")
+    
+    except Exception as e:
+        print(f"Error in personal_order_reminders_task: {e}")
 

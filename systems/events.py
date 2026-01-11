@@ -19,7 +19,7 @@ from core.config import (
     EVENT_CLEANUP_ROLES, COLLECTIVE_THRESHOLD, EXCLUDED_ROLE_SET
 )
 from core.data import increment_event_participation
-from systems.xp import add_xp
+# Legacy XP/Level system removed - events now use coins/activity only
 from core.utils import resolve_channel_id
 
 # Global state
@@ -558,11 +558,11 @@ async def start_obedience_event(ctx_or_guild, event_type: int, channel=None):
                 guild_id = interaction.guild.id if interaction.guild else 0
                 if is_winning:
                     await increment_event_participation(user_id, guild_id=guild_id)
-                    await add_xp(user_id, EVENT_REWARDS[6]["win"], member=member, guild_id=guild_id)
+                    # Legacy XP system removed - events now reward coins only
                     await interaction.response.send_message("Good choice.", ephemeral=True)
                 else:
                     await increment_event_participation(user_id, guild_id=guild_id)
-                    await add_xp(user_id, EVENT_REWARDS[6]["lose"], member=member, guild_id=guild_id)
+                    # Legacy XP system removed - events now reward coins only
                     await interaction.response.send_message("Wrong choice.", ephemeral=True)
         
         view = ChoiceEventView(state, winning_choice)
@@ -605,7 +605,7 @@ async def start_obedience_event(ctx_or_guild, event_type: int, channel=None):
                             print(f"⚠️ Could not fetch member {user_id}, using User object")
                     guild_id = guild.id if guild else 0
                     await increment_event_participation(user_id, guild_id=guild_id)
-                    await add_xp(user_id, EVENT_REWARDS[7]["phase1"], member=member, guild_id=guild_id)
+                    # Legacy XP system removed - events now reward coins only
                     role = guild.get_role(EVENT_7_OPT_IN_ROLE)
                     if role:
                         if role not in member.roles:
@@ -684,8 +684,8 @@ async def end_obedience_event(state):
                             rewarded_users.add(member.id)
                             guild_id = guild.id if guild else 0
                             await increment_event_participation(member.id, guild_id=guild_id)
-                            await add_xp(member.id, reward, member=member, guild_id=guild_id)
-                            print(f"  ↳ ✅ Event 2: Awarded {reward} XP bonus to {member.name} for staying in VC")
+                            # Legacy XP system removed - events now reward coins only
+                            print(f"  ↳ ✅ Event 2: Processed bonus for {member.name} for staying in VC")
     
     # Event 4: Send ending message
     elif event_type == 4:
@@ -709,9 +709,8 @@ async def end_obedience_event(state):
         all_members = set(m.id for m in guild.members if not m.bot and not any(int(r.id) in EXCLUDED_ROLE_SET for r in m.roles))
         non_participants = all_members - rewarded_users
         for uid in non_participants:
-            member = guild.get_member(uid)
-            if member:
-                await add_xp(uid, -20, member=member)
+            # Legacy XP system removed - no penalties applied
+            pass
     
     # Event 6: Send ending message, punish non-participants
     elif event_type == 6:
@@ -730,9 +729,8 @@ async def end_obedience_event(state):
         all_members = set(m.id for m in guild.members if not m.bot and not any(int(r.id) in EXCLUDED_ROLE_SET for r in m.roles))
         non_participants = all_members - rewarded_users
         for uid in non_participants:
-            member = guild.get_member(uid)
-            if member:
-                await add_xp(uid, -20, member=member)
+            # Legacy XP system removed - no penalties applied
+            pass
     
     # Event 7: Handle Phase 2 end, then Phase 3
     elif event_type == 7:
@@ -1007,7 +1005,7 @@ async def handle_event_message(message):
             woof_role = message.guild.get_role(EVENT_4_WOOF_ROLE)
             if woof_role and woof_role in message.author.roles:
                 active_event.setdefault("answered", set()).add(user_id)
-                await add_xp(user_id, EVENT_REWARDS[4], member=message.author)
+                # Legacy XP system removed - events now reward coins only
                 try:
                     await message.add_reaction("❤️")
                 except Exception:
@@ -1018,12 +1016,12 @@ async def handle_event_message(message):
             meow_role = message.guild.get_role(EVENT_4_MEOW_ROLE)
             if meow_role and meow_role in message.author.roles:
                 active_event.setdefault("answered", set()).add(user_id)
-                await add_xp(user_id, EVENT_REWARDS[4], member=message.author)
+                # Legacy XP system removed - events now reward coins only
                 try:
                     await message.add_reaction("❤️")
                 except Exception:
                     pass
-                print(f"  ↳ ✅ Event 4 Phase 2: {message.author.name} answered correctly in Meow channel (+{EVENT_REWARDS[4]} XP)")
+                print(f"  ↳ ✅ Event 4 Phase 2: {message.author.name} answered correctly in Meow channel")
     
     # Event 5: Direct Prompt
     elif event_type == 5:
@@ -1036,7 +1034,7 @@ async def handle_event_message(message):
                 active_event.setdefault("participants", set()).add(user_id)
                 guild_id = message.guild.id if message.guild else 0
                 await increment_event_participation(user_id, guild_id=guild_id)
-                await add_xp(user_id, EVENT_REWARDS[5], member=message.author, guild_id=guild_id)
+                # Legacy XP system removed - events now reward coins only
                 try:
                     await message.add_reaction("❤️")
                 except Exception:
@@ -1050,7 +1048,7 @@ async def handle_event_message(message):
                 "It's fine… this once.",
                 "I'll overlook it for now.",
             ]
-            await add_xp(user_id, 20, member=message.author)
+            # Legacy XP system removed - events now reward coins only
             try:
                 await message.reply(random.choice(sorry_replies))
             except Exception:
@@ -1102,7 +1100,7 @@ async def handle_event_message(message):
                 if user_id not in active_event.get("answered_correctly", set()):
                     guild_id = message.guild.id if message.guild else 0
                     await increment_event_participation(user_id, guild_id=guild_id)
-                    await add_xp(user_id, EVENT_REWARDS[7]["phase2_correct"], member=message.author, guild_id=guild_id)
+                    # Legacy XP system removed - events now reward coins only
                     active_event.setdefault("answered_correctly", set()).add(user_id)
                     
                     guild = message.guild
@@ -1118,13 +1116,13 @@ async def handle_event_message(message):
                         await message.add_reaction("❤️")
                     except Exception as e:
                         print(f"  ↳ Failed to add heart reaction: {e}")
-                    print(f"  ↳ ✅ Event 7 Phase 2: {message.author.name} answered correctly (+{EVENT_REWARDS[7]['phase2_correct']} XP)")
+                    print(f"  ↳ ✅ Event 7 Phase 2: {message.author.name} answered correctly")
             else:
                 guild_id = message.guild.id if message.guild else 0
                 await increment_event_participation(user_id, guild_id=guild_id)
-                await add_xp(user_id, EVENT_REWARDS[7]["phase2_wrong"], member=message.author, guild_id=guild_id)
+                # Legacy XP system removed - events now reward coins only
                 active_event.setdefault("answered_incorrectly", set()).add(user_id)
-                print(f"  ↳ ❌ Event 7 Phase 2: {message.author.name} answered incorrectly ({EVENT_REWARDS[7]['phase2_wrong']} XP)")
+                print(f"  ↳ ❌ Event 7 Phase 2: {message.author.name} answered incorrectly")
     
     # Event 7 Phase 3: Track messages in success/failure channels
     elif event_type == 7 and active_event.get("phase") == 3:
@@ -1143,7 +1141,7 @@ async def handle_event_message(message):
                 
                 cooldowns[user_id] = now
                 active_event["phase3_message_cooldowns"] = cooldowns
-                await add_xp(user_id, 20, member=message.author)
+                # Legacy XP system removed - events now reward coins only
         
         elif channel_id == EVENT_PHASE3_FAILED_CHANNEL_ID:
             failed_role = message.guild.get_role(EVENT_7_FAILED_ROLE)
@@ -1156,7 +1154,7 @@ async def handle_event_message(message):
                 
                 cooldowns[user_id] = now
                 active_event["phase3_message_cooldowns"] = cooldowns
-                await add_xp(user_id, -20, member=message.author)
+                # Legacy XP system removed - no penalties applied
 
 async def handle_event_reaction(payload: discord.RawReactionActionEvent):
     """Handle reactions during active events."""
@@ -1183,12 +1181,12 @@ async def handle_event_reaction(payload: discord.RawReactionActionEvent):
     if event_type == 3 and payload.message_id == active_event["message_id"]:
         emoji_str = str(payload.emoji)
         heart_emojis = active_event.get("heart_emojis", [])
-            if emoji_str in heart_emojis:
+        if emoji_str in heart_emojis:
             if payload.user_id not in active_event.get("reactors", set()):
                 active_event.setdefault("reactors", set()).add(payload.user_id)
                 guild_id = active_event.get("guild_id", 0)
                 await increment_event_participation(payload.user_id, guild_id=guild_id)
-                await add_xp(payload.user_id, EVENT_REWARDS[3], member=member, guild_id=guild_id)
+                # Legacy XP system removed - events now reward coins only
 
 async def escalate_collective_event(guild):
     """Trigger phase 2 for collective event."""

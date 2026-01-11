@@ -16,14 +16,14 @@ import datetime
 from dotenv import load_dotenv
 
 # Import all modules
-from core.config import ALLOWED_GUILDS, EVENT_SCHEDULE
-from core.data import load_xp_data
+from core.config import ALLOWED_GUILDS
+# Legacy: load_xp_data is now a no-op (data is in DB)
 from core.utils import get_timezone, USE_PYTZ
 import systems.events as events
 import systems.handlers as handlers
 import systems.tasks as tasks
 from commands import user_commands, admin_commands
-from systems.xp import set_bot as set_xp_bot
+# Legacy XP/Level system removed
 from core.utils import set_bot as set_utils_bot
 from systems.events import set_bot as set_events_bot
 from systems.tasks import set_bot as set_tasks_bot
@@ -61,7 +61,6 @@ bot = commands.Bot(
 # Set bot instance in all modules (must be done before registering commands/handlers)
 handlers.set_bot(bot)
 set_tasks_bot(bot)
-set_xp_bot(bot)
 set_utils_bot(bot)
 set_events_bot(bot)
 user_commands.set_bot(bot)
@@ -87,6 +86,10 @@ async def on_voice_state_update(member, before, after):
 @bot.event
 async def on_raw_reaction_add(payload):
     await handlers.on_raw_reaction_add(payload)
+
+@bot.event
+async def on_app_command_completion(interaction, command):
+    await handlers.on_app_command_completion(interaction, command)
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -133,40 +136,18 @@ async def on_ready():
             now_uk = datetime.datetime.now(uk_tz)
         today_str = now_uk.strftime("%Y-%m-%d")
         
-        # Clear any old tracking data
-        from systems.events import last_event_times_today
-        last_event_times_today.clear()
-        from systems.tasks import last_daily_check_times_today as last_daily_check_times
-        last_daily_check_times.clear()
-        
-        # Print scheduled times for each tier
-        for tier, scheduled_times in EVENT_SCHEDULE.items():
-            times_str = ", ".join([f"{h:02d}:{m:02d}" for h, m in scheduled_times])
-            print(f"[*] Tier {tier} events scheduled at: {times_str} UK time")
-        
-        # Print Daily Check scheduled times
-        print(f"[*] Daily Check messages scheduled at: 19:00 (Throne), 20:00 (Slots), 22:00 (Daily) UK time")
-        
         print(f"[*] Current UK time: {now_uk.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-    else:
-        print("[!] WARNING: Timezone support not available. Event scheduling may not work correctly.")
-    
-    # Set initial 30-minute cooldown to prevent events from starting immediately
-    events.event_cooldown_until = datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=1800)
-    print(f"⏰ Initial event cooldown set: No events will start for 30 minutes (until {events.event_cooldown_until.strftime('%H:%M:%S UTC')})")
-    
-    # Clear event roles on startup (no events should be active)
-    await events.clear_event_roles()
+        print(f"[*] Promo rotation scheduler: Runs daily at 12:00 UK time (4-day cycle: Throne -> none -> Coffee -> none)")
     
     # Start background tasks
-    tasks.award_vc_xp.start()
     tasks.auto_save.start()
-    tasks.event_scheduler.start()
-    tasks.daily_check_scheduler.start()
+    tasks.promo_rotation_scheduler.start()
     tasks.v3_daily_job.start()
     tasks.v3_weekly_job.start()
     tasks.cleanup_expired_events_task.start()
-    print("Background tasks started: VC XP tracking, auto-save, event scheduler, Daily Check scheduler, V3 progression jobs (daily/weekly), and event cleanup")
+    tasks.daily_orders_drop_task.start()
+    tasks.personal_order_reminders_task.start()
+    print("Background tasks started: auto-save, promo rotation scheduler, V3 progression jobs (daily/weekly), event cleanup, daily orders drop, and personal order reminders")
     
     # Sync slash commands
     try:

@@ -260,3 +260,51 @@ LEVEL_COIN_BONUSES = {
 # Command prefix
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
 
+# -----------------------------
+# Embed icon constants (impact-based)
+# -----------------------------
+HEART_GIF = "https://i.imgur.com/irmCXhw.gif"   # positive/neutral
+ERROR_GIF = "https://i.imgur.com/QJQjYkE.gif"   # negative/error/system
+
+# -----------------------------
+# Gambling/Casino configuration
+# -----------------------------
+CASINO_CHANNEL_ID = 1449946515882774630  # Casino channel where gambling output is public
+DEBT_BLOCK_AT = 5000  # Debt threshold where gambling is blocked
+MAX_BET_ABS = 25000  # Absolute maximum bet
+GAMBLING_COOLDOWNS = {
+    "coinflip": 8,
+    "dice": 10,
+    "slots": 15,
+    "roulette": 20,
+    "blackjack": 30,
+}
+
+# Rank-based max bet caps (based on lifetime coins earned)
+RANK_MAX_BET = {
+    "Stray": 500,
+    "Wanderer": 1000,
+    "Observer": 2000,
+    "Listener": 3500,
+    "Follower": 5000,
+    "Devoted": 7500,
+    "Owned": 10000,
+    "Cherished": 15000,
+    "Adored": 20000,
+    "Prized": 25000,
+}
+
+# LCE thresholds for ranks
+LCE_RANK_THRESHOLDS = {
+    0: "Stray",
+    500: "Wanderer",
+    2000: "Observer",
+    5000: "Listener",
+    10000: "Follower",
+    20000: "Devoted",
+    35000: "Owned",
+    60000: "Cherished",
+    100000: "Adored",
+    175000: "Prized",
+}
+

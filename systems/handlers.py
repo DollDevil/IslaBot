@@ -6,7 +6,7 @@ from discord.ext import commands
 import datetime
 
 from core.config import (
-    REPLY_CHANNEL_ID, EVENT_PHASE2_CHANNEL_ID, EVENT_PHASE2_ALLOWED_ROLE,
+    EVENT_PHASE2_CHANNEL_ID, EVENT_PHASE2_ALLOWED_ROLE,
     EVENT_PHASE3_SUCCESS_CHANNEL_ID, EVENT_PHASE3_SUCCESS_ROLES,
     EVENT_PHASE3_FAILED_CHANNEL_ID, EVENT_PHASE3_FAILED_ROLES,
     NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS, XP_TRACK_SET,
@@ -90,12 +90,14 @@ async def on_message(message):
                 return
 
     # Reaction system for introduction channel (reactions only, no messages)
-    if resolved_channel_id == REPLY_CHANNEL_ID and isinstance(message.author, discord.Member):
-        try:
-            await message.add_reaction("❤️")
-            print(f"  ↳ Added ❤️ reaction to message from {message.author.name}")
-        except Exception as e:
-            print(f"  ↳ Failed to add reaction: {e}")
+    if isinstance(message.author, discord.Member) and message.guild:
+        intro_channel_id = await get_introductions_channel_id(message.guild.id)
+        if intro_channel_id and resolved_channel_id == intro_channel_id:
+            try:
+                await message.add_reaction("❤️")
+                print(f"  ↳ Added ❤️ reaction to message from {message.author.name}")
+            except Exception as e:
+                print(f"  ↳ Failed to add reaction: {e}")
     
     # Introduction channel reply system
     await handle_introduction_reply(message)
@@ -555,6 +557,24 @@ async def on_raw_reaction_add(payload):
     # Handle event reactions
     await handle_event_reaction(payload)
 
+async def on_app_command_completion(interaction: discord.Interaction, command):
+    """Handle app command completion - record command event for order verification"""
+    if interaction.user.bot:
+        return
+    
+    if not interaction.guild:
+        return
+    
+    guild_id = interaction.guild.id
+    user_id = interaction.user.id
+    command_name = command.name if hasattr(command, 'name') else str(command)
+    channel_id = interaction.channel.id if interaction.channel else None
+    
+    if channel_id:
+        from core.db import record_command_event
+        await record_command_event(guild_id, user_id, command_name, channel_id)
+        print(f"  ↳ Recorded command event: {command_name} for user {interaction.user.name}")
+
 async def on_command_error(ctx, error):
     """Handle command errors gracefully"""
     if isinstance(error, commands.MissingPermissions):
@@ -583,11 +603,15 @@ async def on_member_remove(member):
     if member.guild.id not in ALLOWED_GUILDS:
         return
     
-    user_id = str(member.id)
-    if user_id in xp_data:
-        del xp_data[user_id]
-        save_xp_data()
-        print(f"Erased progress for {member.name} (ID: {member.id}) - user left server")
+    # Note: User data is stored in DB - we don't delete on leave (historical data is preserved)
+    # If you want to delete user data on leave, uncomment below:
+    # from core.db import execute
+    # guild_id = member.guild.id
+    # user_id = member.id
+    # await execute("DELETE FROM user_profile WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+    # await execute("DELETE FROM economy_balance WHERE guild_id = ? AND user_id = ?", (guild_id, user_id))
+    # ... (delete from other tables as needed)
+    print(f"Member {member.name} (ID: {member.id}) left server - data preserved in DB")
 
 async def on_member_join(member):
     """Handle new member join - give Unverified role and send welcome message"""

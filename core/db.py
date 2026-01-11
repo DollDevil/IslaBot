@@ -208,10 +208,14 @@ async def init_db():
             coin_rank TEXT,
             eligible_rank TEXT,
             final_rank TEXT,
+            held_rank_idx INTEGER DEFAULT 0,
+            at_risk INTEGER DEFAULT 0,
+            at_risk_since TEXT,
             readiness_pct INTEGER DEFAULT 0,
             blocker_text TEXT,
             computed_at TEXT NOT NULL,
             failed_weeks_count INTEGER DEFAULT 0,
+            last_promotion_at TEXT,
             PRIMARY KEY (guild_id, user_id)
         )
     """)
@@ -234,6 +238,20 @@ async def init_db():
     """)
     
     await _db.execute("""
+        CREATE TABLE IF NOT EXISTS loans (
+            loan_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            principal INTEGER NOT NULL,
+            remaining_principal INTEGER NOT NULL,
+            issued_at TEXT NOT NULL,
+            due_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            converted_to_debt_at TEXT
+        )
+    """)
+    
+    await _db.execute("""
         CREATE TABLE IF NOT EXISTS roles_config (
             guild_id INTEGER NOT NULL,
             message_type TEXT NOT NULL,
@@ -241,6 +259,16 @@ async def init_db():
             message_id INTEGER NOT NULL,
             updated_at TEXT NOT NULL,
             PRIMARY KEY (guild_id, message_type)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS preference_roles (
+            guild_id INTEGER NOT NULL,
+            preference_value TEXT NOT NULL,
+            role_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, preference_value)
         )
     """)
     
@@ -266,6 +294,155 @@ async def init_db():
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             claimed_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        )
+    """)
+    
+    # New tables for interactive features
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS order_user_state (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            order_key TEXT NOT NULL,
+            postponed_until INTEGER,
+            declined_until INTEGER,
+            PRIMARY KEY (guild_id, user_id, order_key)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS user_notifications (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            enabled INTEGER DEFAULT 0,
+            PRIMARY KEY (guild_id, user_id)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS orders_announcement_config (
+            guild_id INTEGER PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS promo_rotation_state (
+            guild_id INTEGER PRIMARY KEY,
+            rotation_index INTEGER DEFAULT 0,
+            last_run_day TEXT,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS casino_channel_config (
+            guild_id INTEGER PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS announcements_channel_config (
+            guild_id INTEGER PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS order_streaks (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            streak_count INTEGER DEFAULT 0,
+            last_outcome TEXT,
+            last_completed_at TEXT,
+            PRIMARY KEY (guild_id, user_id)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS order_reminders (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            run_id INTEGER NOT NULL,
+            reminder_sent_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id, run_id)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS keyword_ping_cooldowns (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            last_used_at INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS reaction_bonus_claims (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            day TEXT NOT NULL,
+            claimed_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id, day)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS first_message_bonus (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            day TEXT NOT NULL,
+            claimed_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id, day)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS order_challenges (
+            challenge_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            challenger_id INTEGER NOT NULL,
+            target_id INTEGER NOT NULL,
+            order_key TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            winner_id INTEGER,
+            created_at TEXT NOT NULL
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS vc_overlap_sessions (
+            guild_id INTEGER NOT NULL,
+            user1_id INTEGER NOT NULL,
+            user2_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            start_ts INTEGER NOT NULL,
+            end_ts INTEGER,
+            duration_minutes INTEGER DEFAULT 0,
+            PRIMARY KEY (guild_id, user1_id, user2_id, channel_id, start_ts)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS buddy_boost_claims (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            day TEXT NOT NULL,
+            claimed_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id, day)
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS micro_interactions_opt_in (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            enabled INTEGER DEFAULT 0,
             PRIMARY KEY (guild_id, user_id)
         )
     """)
@@ -588,6 +765,100 @@ async def bump_command(guild_id: int, user_id: int):
     )
 
 # Cleanup functions for expired events
+# Order streak helpers
+async def get_order_streak(guild_id: int, user_id: int):
+    """Get current order streak for a user"""
+    row = await fetchone(
+        "SELECT streak_count, last_outcome, last_completed_at FROM order_streaks WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id)
+    )
+    if row:
+        return {
+            "streak_count": row["streak_count"],
+            "last_outcome": row["last_outcome"],
+            "last_completed_at": row["last_completed_at"]
+        }
+    return {"streak_count": 0, "last_outcome": None, "last_completed_at": None}
+
+async def update_order_streak(guild_id: int, user_id: int, outcome: str):
+    """
+    Update order streak based on outcome.
+    outcome: "completed", "late", or "failed"
+    Returns (new_streak_count, bonus_awarded)
+    """
+    streak_data = await get_order_streak(guild_id, user_id)
+    current_streak = streak_data["streak_count"]
+    last_outcome = streak_data["last_outcome"]
+    now = _now_iso()
+    
+    bonus_awarded = False
+    new_streak = 0
+    
+    if outcome == "completed" or outcome == "late":
+        # Success - increment streak
+        if last_outcome != "failed":
+            new_streak = current_streak + 1
+        else:
+            # Reset after a fail
+            new_streak = 1
+        
+        # Award bonus if streak reaches 3
+        if new_streak == 3:
+            bonus_awarded = True
+            new_streak = 0  # Reset after bonus (per spec: reset-to-0)
+    elif outcome == "failed":
+        # Failure - reset streak
+        new_streak = 0
+    
+    await execute(
+        """INSERT OR REPLACE INTO order_streaks (guild_id, user_id, streak_count, last_outcome, last_completed_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (guild_id, user_id, new_streak, outcome, now if outcome != "failed" else streak_data["last_completed_at"])
+    )
+    
+    return new_streak, bonus_awarded
+
+# Promo rotation helpers
+async def get_promo_rotation_state(guild_id: int):
+    """Get promo rotation state for a guild"""
+    row = await fetchone(
+        "SELECT rotation_index, last_run_day FROM promo_rotation_state WHERE guild_id = ?",
+        (guild_id,)
+    )
+    if row:
+        return {
+            "rotation_index": row["rotation_index"],
+            "last_run_day": row["last_run_day"]
+        }
+    return {"rotation_index": 0, "last_run_day": None}
+
+async def update_promo_rotation_state(guild_id: int, rotation_index: int, last_run_day: str):
+    """Update promo rotation state for a guild"""
+    now = _now_iso()
+    await execute(
+        """INSERT OR REPLACE INTO promo_rotation_state (guild_id, rotation_index, last_run_day, updated_at)
+           VALUES (?, ?, ?, ?)""",
+        (guild_id, rotation_index, last_run_day, now)
+    )
+
+async def get_announcements_channel_id(guild_id: int):
+    """Get announcements channel ID for a guild (falls back to EVENT_CHANNEL_ID if not configured)"""
+    from core.config import EVENT_CHANNEL_ID
+    row = await fetchone(
+        "SELECT channel_id FROM announcements_channel_config WHERE guild_id = ?",
+        (guild_id,)
+    )
+    return row["channel_id"] if row else EVENT_CHANNEL_ID
+
+async def get_casino_channel_id(guild_id: int):
+    """Get casino channel ID for a guild (falls back to CASINO_CHANNEL_ID if not configured)"""
+    from core.config import CASINO_CHANNEL_ID
+    row = await fetchone(
+        "SELECT channel_id FROM casino_channel_config WHERE guild_id = ?",
+        (guild_id,)
+    )
+    return row["channel_id"] if row else CASINO_CHANNEL_ID
+
 async def cleanup_expired_events():
     """Delete expired event data based on retention windows"""
     now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
@@ -701,4 +972,89 @@ async def import_json_to_db(json_path: str = "data/xp.json"):
             continue
     
     print(f"[+] Successfully imported {imported} users from JSON to database")
+
+# Loan helper functions
+async def get_loan_status(guild_id: int, user_id: int):
+    """Get active loan status for a user"""
+    return await fetchone(
+        """SELECT loan_id, principal, remaining_principal, issued_at, due_at, status
+           FROM loans WHERE guild_id = ? AND user_id = ? AND status = 'active'
+           ORDER BY issued_at DESC LIMIT 1""",
+        (guild_id, user_id)
+    )
+
+async def issue_loan(guild_id: int, user_id: int, principal: int, due_at: str):
+    """Issue a new loan to a user"""
+    now = _now_iso()
+    await execute(
+        """INSERT INTO loans (guild_id, user_id, principal, remaining_principal, issued_at, due_at, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'active')""",
+        (guild_id, user_id, principal, principal, now, due_at)
+    )
+
+async def pay_loan(guild_id: int, user_id: int, amount: int):
+    """Pay off part of a loan"""
+    loan = await get_loan_status(guild_id, user_id)
+    if not loan:
+        return False
+    
+    loan_id = loan["loan_id"]
+    remaining = loan["remaining_principal"]
+    new_remaining = max(0, remaining - amount)
+    
+    if new_remaining == 0:
+        # Loan fully paid
+        await execute(
+            "UPDATE loans SET remaining_principal = 0, status = 'paid' WHERE loan_id = ?",
+            (loan_id,)
+        )
+    else:
+        await execute(
+            "UPDATE loans SET remaining_principal = ? WHERE loan_id = ?",
+            (new_remaining, loan_id)
+        )
+    
+    return True
+
+async def convert_overdue_loans():
+    """Convert overdue loans to debt"""
+    now = _now_iso()
+    now_dt = datetime.datetime.fromisoformat(now.replace('Z', '+00:00'))
+    
+    # Get all overdue active loans
+    overdue_loans = await fetchall(
+        """SELECT loan_id, guild_id, user_id, remaining_principal 
+           FROM loans WHERE status = 'active' AND due_at < ?""",
+        (now,)
+    )
+    
+    converted_count = 0
+    for loan in overdue_loans:
+        loan_id = loan["loan_id"]
+        guild_id = loan["guild_id"]
+        user_id = loan["user_id"]
+        remaining = loan["remaining_principal"]
+        
+        # Add to debt
+        from core.data import update_debt
+        await update_debt(guild_id, user_id, remaining)
+        
+        # Mark loan as converted
+        await execute(
+            """UPDATE loans SET status = 'converted', converted_to_debt_at = ?
+               WHERE loan_id = ?""",
+            (now, loan_id)
+        )
+        
+        # Log to ledger
+        await execute(
+            """INSERT INTO economy_ledger (guild_id, user_id, ts, type, amount, meta_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (guild_id, user_id, now, "loan_converted_to_debt", remaining,
+             json.dumps({"loan_id": loan_id}))
+        )
+        
+        converted_count += 1
+    
+    return converted_count
 

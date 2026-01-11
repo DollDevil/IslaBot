@@ -6,21 +6,21 @@ from discord import app_commands
 import datetime
 
 from core.config import (
-    USER_COMMAND_CHANNEL_ID, ALLOWED_SEND_SET, LEVEL_COIN_BONUSES,
-    LEVEL_ROLE_MAP, EVENT_CHANNEL_ID
+    USER_COMMAND_CHANNEL_ID, ALLOWED_SEND_SET,
+    EVENT_CHANNEL_ID
 )
 from core.data import (
-    xp_data, get_coins, get_level, get_xp, add_coins, has_coins, save_xp_data,
+    get_coins, add_coins, has_coins,
     get_activity_quote
 )
-from core.utils import next_level_requirement, get_timezone, USE_PYTZ
+from core.utils import get_timezone, USE_PYTZ
 from systems.leaderboards import (
     build_rank_leaderboard_embed, build_coins_leaderboard_embed,
     build_activity_leaderboard_embed, LeaderboardView
 )
 from systems.gambling import (
-    gamble, dice, slots_bet, slots_free, coinflip, allin,
-    check_gambling_cooldown
+    gamble, dice, slots_bet, slots_free, coinflip, allin, roulette, blackjack,
+    build_casino_embed
 )
 from core.data import check_daily_cooldown, update_daily_cooldown, check_give_cooldown, update_give_cooldown
 
@@ -68,103 +68,12 @@ async def check_user_command_permissions(interaction_or_ctx) -> bool:
     
     return True
 
-# Create level group for subcommands
-level_group = None
+# Legacy Level/XP system removed - V3 progression only
 
 def register_commands(bot_instance):
     """Register all user commands with the bot"""
-    global bot, level_group
+    global bot
     bot = bot_instance
-    
-    level_group = app_commands.Group(name="level", description="Level-related commands")
-    
-    @level_group.command(name="check", description="Check your current level")
-    @app_commands.describe(member="The member to check (optional, defaults to you)")
-    async def level_check(interaction: discord.Interaction, member: discord.Member = None):
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        member = member or interaction.user
-        user_id = member.id
-        uid = str(user_id)
-        
-        if uid not in xp_data:
-            xp_data[uid] = {
-                "xp": 0, "level": 1, "coins": 0,
-                "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-                "times_gambled": 0, "total_wins": 0,
-                "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-                "equipped_collar": None, "equipped_badge": None
-            }
-        
-        user_data = xp_data[uid]  # Legacy reference, may not be needed
-        guild_id = interaction.guild.id if interaction.guild else 0
-        level_val = await get_level(user_id, guild_id=guild_id)
-        xp = await get_xp(user_id, guild_id=guild_id)
-        coins = await get_coins(user_id, guild_id=guild_id)
-        
-        level_role = "None"
-        for lvl, role_id in sorted(LEVEL_ROLE_MAP.items(), reverse=True):
-            if level_val >= lvl:
-                role = interaction.guild.get_role(role_id)
-                if role:
-                    level_role = role.name
-                break
-        
-        equipped_collar = user_data.get("equipped_collar")
-        collar_display = f" {equipped_collar}" if equipped_collar else ""
-        
-        activity_quote = get_activity_quote(user_id, interaction.guild)
-        
-        vc_minutes = user_data.get("vc_minutes", 0)
-        vc_hours = vc_minutes // 60
-        vc_mins = vc_minutes % 60
-        vc_time_str = f"{vc_hours}h {vc_mins}m" if vc_hours > 0 else f"{vc_mins}m"
-        
-        badges_owned = user_data.get("badges_owned", [])
-        collars_owned = user_data.get("collars_owned", [])
-        interfaces_owned = user_data.get("interfaces_owned", [])
-        
-        badges_display = ", ".join(badges_owned) if badges_owned else "No badges owned."
-        collars_display = ", ".join(collars_owned) if collars_owned else "No collars owned."
-        interfaces_display = ", ".join(interfaces_owned) if interfaces_owned else "No interfaces/themes owned."
-        
-        showcased_badge = user_data.get("equipped_badge")
-        if not showcased_badge and badges_owned:
-            showcased_badge = badges_owned[0]
-        thumbnail_url = None
-        
-        embed = discord.Embed(
-            title=f"{member.display_name}'s Server Profile{collar_display}",
-            description=f"*{activity_quote}*\n",
-            color=0x58585f
-        )
-        
-        embed.add_field(name="Current Level", value=str(level_val), inline=True)
-        embed.add_field(name="Milestone", value=level_role, inline=True)
-        embed.add_field(name="XP", value=str(xp), inline=True)
-        embed.add_field(name="", value="", inline=False)
-        embed.add_field(name="Messages Sent", value=f"💬 {user_data.get('messages_sent', 0)}", inline=True)
-        embed.add_field(name="Voice Chat Time", value=f"🎙️ {vc_time_str}", inline=True)
-        embed.add_field(name="Event Participations", value=f"🎫 {user_data.get('event_participations', 0)}", inline=True)
-        embed.add_field(name="", value="", inline=False)
-        embed.add_field(name="Balance", value=f"💵 {coins}", inline=True)
-        embed.add_field(name="Times Gambled", value=f"🎲 {user_data.get('times_gambled', 0)}", inline=True)
-        embed.add_field(name="Total Wins", value=f"🏆 {user_data.get('total_wins', 0)}", inline=True)
-        embed.add_field(name="", value="", inline=False)
-        embed.add_field(name="Badge Collection", value=badges_display, inline=False)
-        embed.add_field(name="Collar Collection", value=collars_display, inline=False)
-        embed.add_field(name="Interface Collection", value=interfaces_display, inline=False)
-        
-        if thumbnail_url:
-            embed.set_thumbnail(url=thumbnail_url)
-
-        if int(interaction.channel.id) in ALLOWED_SEND_SET:
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(embed=embed, delete_after=10)
-    
-    bot.tree.add_command(level_group)
     
     @bot.tree.command(name="equip", description="Equip a collar or badge")
     @app_commands.describe(item_type="Type of item to equip (collar or badge)", item_name="Name of the item to equip")
@@ -198,7 +107,14 @@ def register_commands(bot_instance):
                 return
             
             xp_data[uid]["equipped_collar"] = item_name
-            save_xp_data()
+            # Updated to use DB - equip is handled by inventory_equipped table
+            from core.db import execute, _now_iso
+            guild_id = interaction.guild.id if interaction.guild else 0
+            await execute(
+                """INSERT OR REPLACE INTO inventory_equipped (guild_id, user_id, equipped_collar, updated_at)
+                   VALUES (?, ?, ?, ?)""",
+                (guild_id, user_id, item_name, _now_iso())
+            )
             embed = discord.Embed(
                 title="Collar Equipped",
                 description=f"You've equipped the collar '{item_name}'.",
@@ -218,7 +134,14 @@ def register_commands(bot_instance):
                 return
             
             xp_data[uid]["equipped_badge"] = item_name
-            save_xp_data()
+            # Updated to use DB - equip is handled by inventory_equipped table
+            from core.db import execute, _now_iso
+            guild_id = interaction.guild.id if interaction.guild else 0
+            await execute(
+                """INSERT OR REPLACE INTO inventory_equipped (guild_id, user_id, equipped_badge, updated_at)
+                   VALUES (?, ?, ?, ?)""",
+                (guild_id, user_id, item_name, _now_iso())
+            )
             embed = discord.Embed(
                 title="Badge Equipped",
                 description=f"You've equipped the badge '{item_name}'.",
@@ -247,11 +170,11 @@ def register_commands(bot_instance):
             color=0x58585f
         )
         
-            embed.add_field(
-                name="Rank Leaderboard",
-                value="💋 Use `/leaderboard <rank>`",
-                inline=False
-            )
+        embed.add_field(
+            name="Rank Leaderboard",
+            value="💋 Use `/leaderboard <rank>`",
+            inline=False
+        )
         embed.add_field(
             name="Coins Leaderboard",
             value="💵 Use `/leaderboard <coins>`",
@@ -276,9 +199,9 @@ def register_commands(bot_instance):
     # Leaderboard command with choice parameter
     @bot.tree.command(name="leaderboard", description="View leaderboards")
     @app_commands.choices(leaderboard_type=[
-        app_commands.Choice(name="levels", value="levels"),
         app_commands.Choice(name="coins", value="coins"),
         app_commands.Choice(name="activity", value="activity"),
+        app_commands.Choice(name="rank", value="rank"),
     ])
     async def leaderboard(interaction: discord.Interaction, leaderboard_type: app_commands.Choice[str]):
         """Show leaderboard based on type"""
@@ -427,9 +350,9 @@ def register_commands(bot_instance):
         
         await interaction.response.send_message(embed=embed)
     
-    @bot.tree.command(name="balance", description="Show your coin balance and level info")
+    @bot.tree.command(name="balance", description="Show your coin balance")
     async def balance(interaction: discord.Interaction):
-        """Show user's coin balance and level info."""
+        """Show user's coin balance."""
         if not await check_user_command_permissions(interaction):
             return
         
@@ -437,7 +360,6 @@ def register_commands(bot_instance):
         user = interaction.user
         guild_id = interaction.guild.id if interaction.guild else 0
         coins = await get_coins(user_id, guild_id=guild_id)
-        level = await get_level(user_id, guild_id=guild_id)
         
         # Get user's display name (nickname if available, otherwise username)
         display_name = user.display_name if hasattr(user, 'display_name') else user.name
@@ -446,24 +368,14 @@ def register_commands(bot_instance):
         on_cooldown, reset_timestamp = check_daily_cooldown(user_id)
         daily_status = "✅ Claimed" if on_cooldown else "❌ Not Claimed"
         
-        # Find next bonus level
-        next_bonus_level = None
-        for bonus_level in sorted(LEVEL_COIN_BONUSES.keys()):
-            if bonus_level > level:
-                next_bonus_level = bonus_level
-                break
-        
-        next_bonus_text = f"Level {next_bonus_level} ({LEVEL_COIN_BONUSES[next_bonus_level]} coins)" if next_bonus_level else "Max level reached"
-        
         embed = discord.Embed(
             title=f"{display_name}'s Total Balance",
             description=f"{coins} coins.\n\u200b",
             color=0xff9d14,
         )
-        embed.add_field(name="Next Bonus", value=next_bonus_text, inline=True)
         embed.add_field(name="Daily Coins", value=daily_status, inline=True)
         embed.set_thumbnail(url="https://i.imgur.com/yYBNX08.png")
-        embed.set_footer(text="Use /daily to claim free coins.")
+        embed.set_footer(text="Use /daily to claim free coins. Use /profile to view full stats.")
         
         await interaction.response.send_message(embed=embed)
     
@@ -496,15 +408,9 @@ def register_commands(bot_instance):
             return
         
         guild_id = interaction.guild.id if interaction.guild else 0
-        level = await get_level(user_id, guild_id=guild_id)
         
         # Base amount is always 100 coins
         base_daily = 100
-        
-        # Level bonus: level * 4.5, but total (base + level bonus) is capped at 500
-        level_bonus_amount = int(level * 4.5)
-        max_total_with_level = 500
-        level_bonus_amount = min(level_bonus_amount, max_total_with_level - base_daily)
         
         # Check for weekend bonus
         uk_tz = get_timezone("Europe/London")
@@ -522,15 +428,12 @@ def register_commands(bot_instance):
             weekend_bonus = False
         
         # Calculate total daily amount
-        daily_amount = base_daily + level_bonus_amount
+        daily_amount = base_daily
         if weekend_bonus:
             daily_amount += 25
         
         await add_coins(user_id, daily_amount, guild_id=guild_id)
         update_daily_cooldown(user_id)
-        
-        # Format level bonus field
-        level_bonus_text = f"+{level_bonus_amount} coins" if level_bonus_amount > 0 else "❌ No Bonus"
         
         # Format weekend bonus field
         weekend_bonus_text = "✅ +25 coins" if weekend_bonus else "❌ Not Active"
@@ -540,7 +443,6 @@ def register_commands(bot_instance):
             description=f"Claimed {daily_amount} coins!\n\u200b",
             color=0xff9d14,
         )
-        embed.add_field(name="Level Bonus", value=level_bonus_text, inline=True)
         embed.add_field(name="Weekend Bonus", value=weekend_bonus_text, inline=True)
         embed.set_thumbnail(url="https://i.imgur.com/ZKq5nZ2.png")
         embed.set_footer(text="Resets daily at 6:00 PM GMT")
@@ -580,7 +482,7 @@ def register_commands(bot_instance):
         await add_coins(user_id, -amount, guild_id=guild_id)
         await add_coins(member.id, amount, guild_id=guild_id)
         update_give_cooldown(user_id)
-        save_xp_data()
+        # Data now stored in DB - no need to save JSON
         
         embed = discord.Embed(
             title="Gift 🎁",
@@ -602,13 +504,18 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
-        embed = discord.Embed(
-            title="🎲 The Gamble Table",
-            description="*One move decides everything.*\n\n**How to Play**\nUse: /gamble <bet>\nPlace your Coins and let fate choose.\n\n**💰 Payout**\nWin: x2 (double your bet)\nLose: lose the full bet\n\n**📜 Table Rules**\nMinimum bet: 10 Coins\nCooldown: 10 seconds",
-            color=0xffae00,
+        embed = build_casino_embed(
+            kind="info",
+            outcome=None,
+            title="ℹ️ Coinflip Info",
+            description="49/51 chance to double or lose.",
+            fields=[
+                {"name": "Min Bet", "value": "**10** coins", "inline": True},
+                {"name": "Payout", "value": "**x2**", "inline": True},
+                {"name": "Cooldown", "value": "**8s**", "inline": True}
+            ],
+            footer_text="Use /gamble <bet> or /coinflip <bet>"
         )
-        embed.set_image(url="https://i.imgur.com/fgTsEZy.png")
-        embed.set_footer(text="Use /gamble <bet> like a good dog.")
         await interaction.response.send_message(embed=embed)
     
     @bot.tree.command(name="dice", description="Roll dice - win if your roll > dealer roll")
@@ -622,10 +529,18 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
-        embed = discord.Embed(
-            title="🎲 Dice Game",
-            description="**How to Play:**\nRoll a die (1-6). If your roll is higher than the dealer's, you win!\n\n**Rules:**\nMinimum bet: 50 coins\nCooldown: 10 seconds\nTie: Bet returned",
-            color=0xffae00,
+        embed = build_casino_embed(
+            kind="info",
+            outcome=None,
+            title="ℹ️ Dice Info",
+            description="Roll 1–6 vs dealer. Higher roll wins.",
+            fields=[
+                {"name": "Min Bet", "value": "**50** coins", "inline": True},
+                {"name": "Payout", "value": "**x2**", "inline": True},
+                {"name": "Ties", "value": "Bet returned", "inline": True},
+                {"name": "Cooldown", "value": "**10s**", "inline": True}
+            ],
+            footer_text="Use /dice <bet>"
         )
         await interaction.response.send_message(embed=embed)
     
@@ -649,12 +564,18 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
-        embed = discord.Embed(
-            title="🎰 Slots Paytable (3-of-a-kind)",
-            description="🥝 x1.5 • 🍇 x2 • 🍋 x3 • 🍑 x5 \n🍉 x8 • 🍒 x15 • 👑 x30\n\n🎁 Bonus Roll\n\nPayout = bet × multiplier",
-            color=0xff000d,
+        embed = build_casino_embed(
+            kind="info",
+            outcome=None,
+            title="ℹ️ Slots Paytable",
+            description="3-of-a-kind multipliers (weighted reels).",
+            fields=[
+                {"name": "Multipliers", "value": "🥝 x1.5 • 🍇 x2 • 🍋 x3 • 🍑 x5 • 🍉 x8 • 🍒 x15 • 👑 x30 (JACKPOT)", "inline": False},
+                {"name": "Bonus 🎁", "value": "3x 🎁 → +5 free spins\n2x 🎁 → +2 free spins +250 coins\n🎁 + pair → x0.8 multiplier", "inline": False},
+                {"name": "Safety Nets", "value": "2-of-a-kind → -50% loss\nFree spins: `/slots free`", "inline": False}
+            ],
+            footer_text="Cooldown: 15s • Min bet: 10"
         )
-        embed.set_image(url="https://i.imgur.com/fgTsEZy.png")
         await interaction.response.send_message(embed=embed)
     
     @bot.tree.command(name="slotsinfo", description="Show slots info")
@@ -663,13 +584,19 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
-        embed = discord.Embed(
-            title="🎰 Isla's Lucky Slots",
-            description="**Reels:**\n[🥝] [🍉] [🍒]\n\n**Payouts (3-of-a-kind):**\n🥝 x1.5 • 🍇 x2 • 🍋 x3 • 🍑 x5\n🍉 x8 • 🍒 x15 • 👑 x30 (JACKPOT)\n\n**Bonus:**\n1x 🎁 = Mini Bonus\n2x 🎁 = Big Bonus (2 Free Spins)\n3x 🎁 = Mega Bonus (5 Free Spins)\n\n**Free Spins:**\nUse /slots free (costs 0 Coins)\n\n**Streak Flair:**\n🔥 Hot streak = 3 wins\n🥶 Cold streak = 5 losses",
-            color=0xffae00,
+        embed = build_casino_embed(
+            kind="info",
+            outcome=None,
+            title="ℹ️ Slots Info",
+            description="3 reel weighted symbols. Match 3-of-a-kind to win.",
+            fields=[
+                {"name": "Min Bet", "value": "**10** coins", "inline": True},
+                {"name": "Cooldown", "value": "**15s**", "inline": True},
+                {"name": "Free Spins", "value": "Use `/slots free`", "inline": True},
+                {"name": "Streaks", "value": "🔥 Hot: 3+ wins • 🥶 Cold: 5+ losses", "inline": False}
+            ],
+            footer_text="See /slotspaytable for multipliers"
         )
-        embed.set_image(url="https://i.imgur.com/fgTsEZy.png")
-        embed.set_footer(text="Use /slots bet <amount> like a good dog.")
         await interaction.response.send_message(embed=embed)
     
     @bot.tree.command(name="casinoinfo", description="Show casino info")
@@ -678,13 +605,18 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
-        embed = discord.Embed(
-            title="🎲 Welcome to my Casino",
-            description="*I wonder… are you brave enough to touch my games, or will you hesitate like the rest?*\n\n**My Games are Waiting for you**\n🎰 Slots — Spin the reels with /slots bet <bet>\n🎲 Dice — Roll your luck with /dice <bet>\n\nEach game is fast, fair, and unforgiving… just the way I like it.\n\n**Betting Basics:**\nMinimum and maximum bets apply.\nCooldowns keep the tables smooth.\nWins are paid instantly in Coins.\n\n**🎁 Tempting Extras**\nWinners who win big receive a special reward ♥",
-            color=0xffae00,
+        embed = build_casino_embed(
+            kind="info",
+            outcome=None,
+            title="ℹ️ Casino Overview",
+            description="All games use unified validation: **debt blocking**, **rank caps**, **channel enforcement**, and **LCE tracking**.",
+            fields=[
+                {"name": "Games", "value": "`/coinflip` `/gamble` • `/dice` • `/slots` • `/roulette` • `/blackjack`", "inline": False},
+                {"name": "Cooldowns", "value": "Coinflip 8s • Dice 10s • Slots 15s • Roulette 20s • Blackjack 30s", "inline": False},
+                {"name": "Streaks", "value": "🔥 Hot: 3+ wins • 🥶 Cold: 5+ losses • resets after 1h inactivity", "inline": False}
+            ],
+            footer_text="Use the /<game>info commands for full rules."
         )
-        embed.set_image(url="https://i.imgur.com/fgTsEZy.png")
-        embed.set_footer(text="Use /slots bet <bet> like a good dog.")
         await interaction.response.send_message(embed=embed)
     
     @bot.tree.command(name="coinflip", description="Coin flip - same as gamble (49/51 chance)")
@@ -698,9 +630,22 @@ def register_commands(bot_instance):
         await gambleinfo(interaction)
     
     @bot.tree.command(name="allin", description="Go all-in on a game (bet all coins)")
-    @app_commands.describe(game="The game to play (gamble, dice, or slots)")
+    @app_commands.describe(game="The game to play (gamble, dice, slots, blackjack, or roulette)")
     async def allin_command(interaction: discord.Interaction, game: str):
         await allin(interaction, game)
+    
+    @bot.tree.command(name="roulette", description="Play roulette - bet on red/black/green or a number")
+    @app_commands.describe(
+        bet="The amount of coins to bet",
+        choice="Your choice: red, black, green, or a number (0-36)"
+    )
+    async def roulette_command(interaction: discord.Interaction, bet: int, choice: str):
+        await roulette(interaction, bet, choice)
+    
+    @bot.tree.command(name="blackjack", description="Play blackjack - get closer to 21 than the dealer")
+    @app_commands.describe(bet="The amount of coins to bet")
+    async def blackjack_command(interaction: discord.Interaction, bet: int):
+        await blackjack(interaction, bet)
     
     @bot.tree.command(name="store", description="Show the store")
     async def store(interaction: discord.Interaction):
@@ -801,7 +746,7 @@ def register_commands(bot_instance):
         
         # Rank field
         progress_bar = make_progress_bar(stats.get("readiness_pct", 0))
-        rank_value = f"🐾 {stats.get('rank', 'Newcomer')}\n⭐ {progress_bar} {stats.get('readiness_pct', 0)}%\n{stats.get('blocker_text', '🔓 Ready')}"
+        rank_value = f"🐾 {stats.get('rank', 'Stray')}\n⭐ {progress_bar} {stats.get('readiness_pct', 0)}%\n{stats.get('blocker_text', '🔓 Ready')}"
         embed.add_field(name="Rank", value=rank_value, inline=True)
         
         # Spacer
@@ -896,8 +841,8 @@ def register_commands(bot_instance):
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # Rank field
-        current_rank = stats.get("rank", "Newcomer")
+        # Rank field (rank is already formatted with petname)
+        current_rank = stats.get("rank", "Stray")
         readiness_pct = stats.get("readiness_pct", 0)
         progress_bar = make_progress_bar(readiness_pct, 12)
         blocker_text = stats.get("blocker_text", "🔓 Ready")
@@ -907,16 +852,24 @@ def register_commands(bot_instance):
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # Next Rank
-        next_rank = stats.get("next_rank", "Max Rank")
-        current_rank = stats.get("rank", "Newcomer")
-        if next_rank == current_rank or next_rank == "Max Rank":
+        # Next Rank (format with petname if available)
+        next_rank_prefix = stats.get("next_rank", "Max Rank")
+        current_rank_formatted = stats.get("rank", "Stray")  # Already formatted
+        petname = stats.get("petname", None)
+        from systems.progression import format_rank_name
+        if next_rank_prefix == "Max Rank":
+            next_rank = "Max Rank"
+        else:
+            next_rank = format_rank_name(next_rank_prefix, petname)
+        
+        current_rank_prefix = stats.get("rank_prefix", "Stray")
+        if next_rank_prefix == current_rank_prefix or next_rank_prefix == "Max Rank":
             next_rank = "Max Rank"
             readiness_pct = 100
             blocker_text = "🔓 Ready"
             progress_bar = make_progress_bar(100, 12)
             # Update rank field for max rank
-            rank_value = f"🐾 {current_rank}\n⭐ {progress_bar} 100%\n{blocker_text}"
+            rank_value = f"🐾 {current_rank_formatted}\n⭐ {progress_bar} 100%\n{blocker_text}"
             embed.set_field_at(1, name="Rank", value=rank_value, inline=False)
         embed.add_field(name="Next Rank", value=f"⏫ {next_rank}", inline=False)
         
@@ -931,13 +884,13 @@ def register_commands(bot_instance):
         late14 = stats.get("orders_late", 0)
         streak = stats.get("obedience_streak", 0)
         
-        # Get next rank requirements
+        # Get next rank requirements (use rank_prefix for calculations)
         from systems.progression import RANK_LADDER, GATES
         rank_names = [r["name"] for r in RANK_LADDER]
-        current_rank_name = stats.get("rank", "Newcomer")
-        current_idx = rank_names.index(current_rank_name) if current_rank_name in rank_names else 0
+        current_rank_prefix = stats.get("rank_prefix", "Stray")  # Use prefix, not formatted name
+        current_idx = rank_names.index(current_rank_prefix) if current_rank_prefix in rank_names else 0
         next_idx = min(current_idx + 1, len(rank_names) - 1)
-        next_rank_name = rank_names[next_idx] if next_idx > current_idx else current_rank_name
+        next_rank_name = rank_names[next_idx] if next_idx > current_idx else current_rank_prefix
         
         # Get requirements for next rank
         next_gates = GATES.get(next_rank_name, [])
@@ -1080,15 +1033,33 @@ def register_commands(bot_instance):
         if not await check_user_command_permissions(interaction):
             return
         
+        # Record command event
+        if interaction.guild:
+            guild_id = interaction.guild.id
+            user_id = interaction.user.id
+            channel_id = interaction.channel.id
+            from core.db import record_command_event, bump_command
+            await record_command_event(guild_id, user_id, "profile", channel_id)
+            await bump_command(guild_id, user_id)
+        
         member = member or interaction.user
         if not isinstance(member, discord.Member):
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.data import get_profile_stats
+        from systems.handlers import get_user_petname
+        from systems.progression import format_rank_name
         
         guild_id = interaction.guild.id if interaction.guild else 0
         stats = await get_profile_stats(guild_id, member.id)
+        
+        # Get petname and format rank name
+        petname, has_petname = await get_user_petname(member)
+        rank_prefix = stats.get("rank", "Stray")
+        stats["rank"] = format_rank_name(rank_prefix, petname if has_petname else None)
+        stats["petname"] = petname if has_petname else None
+        
         embed = build_profile_embed(member, stats)
         
         if int(interaction.channel.id) in ALLOWED_SEND_SET:
@@ -1122,10 +1093,17 @@ def register_commands(bot_instance):
         rank_data = await get_rank(guild_id, member.id)
         stats.update(rank_data)
         
+        # Get petname and format rank names
+        from systems.handlers import get_user_petname
+        from systems.progression import format_rank_name, GATES, RANK_LADDER
+        petname, has_petname = await get_user_petname(member)
+        rank_prefix = stats.get("rank", "Stray")
+        stats["rank"] = format_rank_name(rank_prefix, petname if has_petname else None)
+        stats["rank_prefix"] = rank_prefix  # Store prefix for calculations
+        
         # Calculate failing gates count for quote selection
-        from systems.progression import GATES, RANK_LADDER
         rank_names = [r["name"] for r in RANK_LADDER]
-        current_rank_name = stats.get("rank", "Newcomer")
+        current_rank_name = rank_prefix  # Use prefix for calculations
         current_idx = rank_names.index(current_rank_name) if current_rank_name in rank_names else 0
         next_idx = min(current_idx + 1, len(rank_names) - 1)
         next_rank_name = rank_names[next_idx] if next_idx > current_idx else current_rank_name
@@ -1277,7 +1255,9 @@ def register_commands(bot_instance):
             await interaction.response.send_message(embed=embed, delete_after=15)
     
     bot.tree.add_command(coins_group)
-
+    
+    # Orders catalog
+    ORDERS_CATALOG = {
         "presence_ping": {
             "title": "Presence Ping",
             "difficulty": "easy",
@@ -1584,13 +1564,7 @@ def register_commands(bot_instance):
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # How Orders Work
-        embed.add_field(
-            name="How Orders Work",
-            value="1. Get information `/order info <order name>`\n2. Accept order `/order accept <order name>`\n3. Complete order `/order complete <order name>`",
-            inline=False
-        )
-        
+        # Remove "How Orders Work" field per A1 requirement
         return embed
     
     def build_order_info_embed(order_key: str, is_available: bool) -> discord.Embed:
@@ -1856,6 +1830,185 @@ def register_commands(bot_instance):
     # Orders commands
     order_group = app_commands.Group(name="order", description="Order management commands")
     
+    # Orders selection menu view (A1)
+    class OrdersSelectView(discord.ui.View):
+        def __init__(self, available_orders: list, guild_id: int, user_id: int):
+            super().__init__(timeout=300)
+            self.available_orders = available_orders
+            self.guild_id = guild_id
+            self.user_id = user_id
+            
+            # Create select menu with available orders
+            options = []
+            for order_key in available_orders:
+                if order_key in ORDERS_CATALOG:
+                    order = ORDERS_CATALOG[order_key]
+                    options.append(discord.SelectOption(
+                        label=order["title"],
+                        description=f"{order['difficulty'].capitalize()} • {_format_due_window(order['due_seconds'])}",
+                        value=order_key
+                    ))
+            
+            if options:
+                select = discord.ui.Select(
+                    placeholder="Order Information",
+                    options=options,
+                    custom_id=f"orders_select_{guild_id}_{user_id}"
+                )
+                select.callback = self.on_select
+                self.add_item(select)
+        
+        async def on_select(self, interaction: discord.Interaction):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your order menu.", ephemeral=True)
+                return
+            
+            order_key = interaction.data["values"][0]
+            await self.show_order_info(interaction, order_key)
+        
+        async def show_order_info(self, interaction: discord.Interaction, order_key: str):
+            if order_key not in ORDERS_CATALOG:
+                await interaction.response.send_message("Invalid order.", ephemeral=True)
+                return
+            
+            order = ORDERS_CATALOG[order_key]
+            embed = build_order_info_embed(order_key, True)
+            
+            view = OrderActionButtons(order_key, self.guild_id, self.user_id)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    
+    class OrderActionButtons(discord.ui.View):
+        def __init__(self, order_key: str, guild_id: int, user_id: int):
+            super().__init__(timeout=300)
+            self.order_key = order_key
+            self.guild_id = guild_id
+            self.user_id = user_id
+        
+        @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, emoji="✅")
+        async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your order.", ephemeral=True)
+                return
+            
+            # Simulate /order accept logic
+            from core.db import fetchone, execute
+            order = ORDERS_CATALOG[self.order_key]
+            
+            # Check if already accepted
+            active_run = await fetchone(
+                """SELECT run_id FROM order_runs 
+                   WHERE guild_id = ? AND user_id = ? AND status = 'accepted'
+                   AND order_id IN (SELECT order_id FROM orders WHERE name = ?)""",
+                (self.guild_id, self.user_id, order["title"])
+            )
+            
+            if active_run:
+                embed = build_order_accept_fail_embed("You already have this order accepted.")
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Check postponed/declined
+            state = await fetchone(
+                """SELECT postponed_until, declined_until FROM order_user_state 
+                   WHERE guild_id = ? AND user_id = ? AND order_key = ?""",
+                (self.guild_id, self.user_id, self.order_key)
+            )
+            
+            now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+            if state:
+                if state.get("postponed_until") and state["postponed_until"] > now_ts:
+                    await interaction.response.send_message("This order is postponed.", ephemeral=True)
+                    return
+                if state.get("declined_until") and state["declined_until"] > now_ts:
+                    await interaction.response.send_message("This order was declined. Wait 24 hours.", ephemeral=True)
+                    return
+            
+            # Accept order (reuse existing logic from order_accept)
+            available_orders = await _get_available_orders(self.guild_id)
+            if self.order_key not in available_orders:
+                embed = build_order_accept_fail_embed("This order is not available today.")
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            
+            # Check cooldown/reset rules
+            # Get order_id
+            from core.db import fetchone as db_fetchone
+            order_row = await db_fetchone(
+                "SELECT order_id FROM orders WHERE guild_id = ? AND name = ?",
+                (self.guild_id, order["title"])
+            )
+            
+            if not order_row:
+                # Create order if doesn't exist
+                from core.db import execute, _now_iso
+                await execute(
+                    """INSERT INTO orders (guild_id, name, description, reward_coins, due_seconds, is_active, created_at)
+                       VALUES (?, ?, ?, ?, ?, 1, ?)""",
+                    (self.guild_id, order["title"], order.get("instructions", ""), order["reward_coins"], order["due_seconds"], _now_iso())
+                )
+                order_row = await db_fetchone(
+                    "SELECT order_id FROM orders WHERE guild_id = ? AND name = ?",
+                    (self.guild_id, order["title"])
+                )
+            
+            order_id = order_row["order_id"]
+            
+            # Get baseline VC minutes
+            from core.db import get_activity_7d
+            activity = await get_activity_7d(self.guild_id, self.user_id)
+            vc_baseline = activity.get("vc_minutes", 0)
+            import json
+            progress_json = json.dumps({"vc_minutes_baseline": vc_baseline})
+            
+            # Call order_accept
+            from core.data import order_accept
+            run_id = await order_accept(self.guild_id, self.user_id, order_id, order["due_seconds"], self.order_key, progress_json)
+            
+            if run_id:
+                embed = build_order_accept_embed(self.order_key, order["due_seconds"])
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                embed = build_order_accept_fail_embed("Failed to accept order. Please try again.")
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        @discord.ui.button(label="Postpone", style=discord.ButtonStyle.grey, emoji="⏸️")
+        async def postpone_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your order.", ephemeral=True)
+                return
+            
+            # Mark postponed for 6 hours
+            from core.db import execute
+            now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+            postpone_until = now_ts + (6 * 3600)
+            
+            await execute(
+                """INSERT OR REPLACE INTO order_user_state (guild_id, user_id, order_key, postponed_until)
+                   VALUES (?, ?, ?, ?)""",
+                (self.guild_id, self.user_id, self.order_key, postpone_until)
+            )
+            
+            await interaction.response.send_message("Postponed for 6 hours.", ephemeral=True)
+        
+        @discord.ui.button(label="Decline", style=discord.ButtonStyle.red, emoji="❌")
+        async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your order.", ephemeral=True)
+                return
+            
+            # Mark declined for 24 hours
+            from core.db import execute
+            now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+            decline_until = now_ts + (24 * 3600)
+            
+            await execute(
+                """INSERT OR REPLACE INTO order_user_state (guild_id, user_id, order_key, declined_until)
+                   VALUES (?, ?, ?, ?)""",
+                (self.guild_id, self.user_id, self.order_key, decline_until)
+            )
+            
+            await interaction.response.send_message("Declined.", ephemeral=True)
+    
     @bot.tree.command(name="orders", description="View available orders")
     async def orders(interaction: discord.Interaction):
         """View available orders"""
@@ -1868,7 +2021,8 @@ def register_commands(bot_instance):
         available_orders = await _get_available_orders(guild_id)
         embed = build_orders_embed(available_orders, guild_id, user_id)
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        view = OrdersSelectView(available_orders, guild_id, user_id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     @order_group.command(name="info", description="Get information about an order")
     @app_commands.describe(order_name="The order to get information about")
@@ -2092,7 +2246,7 @@ def register_commands(bot_instance):
         # Find active run for this order
         from core.db import fetchone
         active_run = await fetchone(
-            """SELECT run_id, accepted_at, due_at, status FROM order_runs 
+            """SELECT run_id, accepted_at, due_at, status, progress_json FROM order_runs 
                WHERE guild_id = ? AND user_id = ? AND status = 'accepted'
                AND order_id IN (SELECT order_id FROM orders WHERE name = ?)
                ORDER BY accepted_at DESC LIMIT 1""",
@@ -2118,6 +2272,7 @@ def register_commands(bot_instance):
         accepted_at_ts = int(accepted_at.timestamp())
         
         # Verify based on step type using event tables
+        from core.db import fetchall
         if steps["type"] == "message_count":
             min_count = steps.get("min_count", 1)
             spacing = steps.get("spacing_seconds", 0)
@@ -2313,11 +2468,20 @@ def register_commands(bot_instance):
         
         # Complete the order
         from core.data import order_complete, add_coins
-        success = await order_complete(guild_id, user_id, run_id, is_late)
+        result = await order_complete(guild_id, user_id, run_id, is_late)
         
-        if success:
+        if result and result.get("success"):
             completion_proof = "\n".join(completion_proof_parts) if completion_proof_parts else "✅ Task completed"
             embed = build_order_complete_embed(order_key, is_late, order["reward_coins"], completion_proof)
+            
+            # Add streak bonus message if applicable
+            if result.get("bonus_awarded"):
+                streak_bonus = result.get("streak_bonus", 25)
+                if embed.footer and embed.footer.text:
+                    embed.set_footer(text=f"{embed.footer.text} | Streak bonus: +{streak_bonus} coins")
+                else:
+                    embed.set_footer(text=f"Streak bonus: +{streak_bonus} coins")
+            
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(
@@ -2325,6 +2489,180 @@ def register_commands(bot_instance):
                 ephemeral=True,
                 delete_after=10
             )
+    
+    @order_group.command(name="status", description="View progress on your active orders")
+    async def order_status(interaction: discord.Interaction):
+        """View order progress status"""
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        guild_id = interaction.guild.id if interaction.guild else 0
+        user_id = interaction.user.id
+        
+        # Get all active orders
+        from core.db import fetchall, fetchone
+        active_runs = await fetchall(
+            """SELECT run_id, order_id, accepted_at, due_at, progress_json 
+               FROM order_runs 
+               WHERE guild_id = ? AND user_id = ? AND status = 'accepted'
+               ORDER BY accepted_at DESC""",
+            (guild_id, user_id)
+        )
+        
+        if not active_runs:
+            embed = discord.Embed(
+                description="You have no active orders."
+            )
+            embed.set_author(
+                name="Order Progress Status",
+                icon_url="https://i.imgur.com/irmCXhw.gif"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        embed = discord.Embed()
+        embed.set_author(
+            name="Order Progress Status",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        accepted_at_ts_base = int(datetime.datetime.now(datetime.UTC).timestamp())
+        
+        for run in active_runs:
+            # Get order info
+            order_row = await fetchone(
+                "SELECT name FROM orders WHERE order_id = ?",
+                (run["order_id"],)
+            )
+            
+            if not order_row:
+                continue
+            
+            order_name = order_row["name"]
+            order_key = _normalize_order_name(order_name)
+            
+            if order_key not in ORDERS_CATALOG:
+                continue
+            
+            order = ORDERS_CATALOG[order_key]
+            steps = order["steps_json"]
+            accepted_at = datetime.datetime.fromisoformat(run["accepted_at"].replace('Z', '+00:00'))
+            due_at = datetime.datetime.fromisoformat(run["due_at"].replace('Z', '+00:00'))
+            now = datetime.datetime.now(datetime.UTC)
+            accepted_at_ts = int(accepted_at.timestamp())
+            
+            # Calculate time left
+            time_left_seconds = int((due_at - now).total_seconds())
+            if time_left_seconds <= 0:
+                time_left = "⏳ Overdue"
+            else:
+                hours = time_left_seconds // 3600
+                minutes = (time_left_seconds % 3600) // 60
+                if hours > 0:
+                    time_left = f"⏳ {hours}h {minutes}min"
+                else:
+                    time_left = f"⏳ {minutes}min"
+            
+            # Calculate progress based on step type
+            progress_lines = []
+            
+            if steps["type"] == "message_count":
+                min_count = steps.get("min_count", 1)
+                spacing = steps.get("spacing_seconds", 0)
+                message_rows = await fetchall(
+                    """SELECT ts FROM message_events 
+                       WHERE guild_id = ? AND user_id = ? AND ts >= ?
+                       ORDER BY ts""",
+                    (guild_id, user_id, accepted_at_ts)
+                )
+                
+                if spacing > 0:
+                    valid_messages = []
+                    for row in message_rows:
+                        ts = row["ts"]
+                        if not valid_messages or (ts - valid_messages[-1]) >= spacing:
+                            valid_messages.append(ts)
+                    total = len(valid_messages)
+                else:
+                    total = len(message_rows)
+                
+                progress_lines.append(f"Messages Sent: {total}/{min_count}")
+            
+            elif steps["type"] == "vc_minutes":
+                min_minutes = steps.get("min_minutes", 30)
+                progress_data = {}
+                if run.get("progress_json"):
+                    import json
+                    try:
+                        progress_data = json.loads(run["progress_json"])
+                    except:
+                        pass
+                
+                vc_baseline = progress_data.get("vc_minutes_baseline", 0)
+                accepted_date = accepted_at.date().isoformat()
+                activity_rows = await fetchall(
+                    """SELECT SUM(vc_minutes) as total FROM activity_daily 
+                       WHERE guild_id = ? AND user_id = ? AND day >= ?""",
+                    (guild_id, user_id, accepted_date)
+                )
+                
+                current_vc = activity_rows[0]["total"] if activity_rows and activity_rows[0]["total"] else 0
+                delta_vc = current_vc - vc_baseline
+                
+                progress_lines.append(f"Voice Chat Time: {delta_vc}/{min_minutes} minutes")
+            
+            elif steps["type"] == "reply_count":
+                min_count = steps.get("min_count", 1)
+                reply_rows = await fetchall(
+                    """SELECT ts FROM message_events 
+                       WHERE guild_id = ? AND user_id = ? AND ts >= ?
+                       AND is_reply = 1 AND replied_to_user_is_bot = 0""",
+                    (guild_id, user_id, accepted_at_ts)
+                )
+                total = len(reply_rows)
+                progress_lines.append(f"Replies: {total}/{min_count}")
+            
+            elif steps["type"] == "command_used":
+                cmd = steps.get("command", "/profile")
+                cmd_name = cmd.replace("/", "")
+                cmd_rows = await fetchall(
+                    """SELECT ts FROM command_events 
+                       WHERE guild_id = ? AND user_id = ? AND command_name = ? AND ts >= ?""",
+                    (guild_id, user_id, cmd_name, accepted_at_ts)
+                )
+                total = len(cmd_rows)
+                progress_lines.append(f"Commands Used: {total}/1")
+            
+            elif steps["type"] == "reaction_on_channel_recent":
+                hours = steps.get("hours_recent", 24)
+                reaction_rows = await fetchall(
+                    """SELECT ts FROM reaction_events 
+                       WHERE guild_id = ? AND user_id = ? AND ts >= ?""",
+                    (guild_id, user_id, accepted_at_ts)
+                )
+                total = len(reaction_rows)
+                progress_lines.append(f"Reactions: {total}/1")
+            
+            # Add spacer between orders
+            embed.add_field(name="", value="", inline=False)
+            
+            # Add order progress
+            difficulty_emoji = _get_difficulty_emoji(order["difficulty"])
+            progress_text = "\n".join(progress_lines) if progress_lines else "Progress tracking..."
+            
+            embed.add_field(
+                name=f"{difficulty_emoji} {order_name}",
+                value=progress_text,
+                inline=True
+            )
+            
+            embed.add_field(
+                name="Time Left",
+                value=time_left,
+                inline=True
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     
     bot.tree.add_command(order_group)
     
@@ -2349,4 +2687,58 @@ def register_commands(bot_instance):
             await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
         else:
             await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
+    
+    # Notifyme command (B1)
+    class NotifymeView(discord.ui.View):
+        def __init__(self, guild_id: int, user_id: int):
+            super().__init__(timeout=300)
+            self.guild_id = guild_id
+            self.user_id = user_id
+        
+        @discord.ui.button(label="Start", style=discord.ButtonStyle.green, emoji="✅")
+        async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your notification menu.", ephemeral=True)
+                return
+            
+            from core.db import execute
+            await execute(
+                """INSERT OR REPLACE INTO user_notifications (guild_id, user_id, enabled)
+                   VALUES (?, ?, 1)""",
+                (self.guild_id, self.user_id)
+            )
+            
+            await interaction.response.send_message("Notifications enabled. You will receive reminders for new orders and warnings when orders are close to expiring.", ephemeral=True)
+        
+        @discord.ui.button(label="Stop", style=discord.ButtonStyle.red, emoji="❌")
+        async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your notification menu.", ephemeral=True)
+                return
+            
+            from core.db import execute
+            await execute(
+                """INSERT OR REPLACE INTO user_notifications (guild_id, user_id, enabled)
+                   VALUES (?, ?, 0)""",
+                (self.guild_id, self.user_id)
+            )
+            
+            await interaction.response.send_message("Notifications disabled.", ephemeral=True)
+    
+    @bot.tree.command(name="notifyme", description="Enable or disable order notifications")
+    async def notifyme(interaction: discord.Interaction):
+        """Notification preferences"""
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        guild_id = interaction.guild.id if interaction.guild else 0
+        user_id = interaction.user.id
+        
+        embed = discord.Embed(
+            description="Get notified whenever IslaBot posts new updates."
+        )
+        embed.set_author(name="Notifications")
+        
+        view = NotifymeView(guild_id, user_id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 

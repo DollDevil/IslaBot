@@ -6,31 +6,31 @@ import datetime
 from core.db import fetchone, fetchall, execute, _now_iso, _today_str
 
 # Rank ladder based on Lifetime Coins Earned (LCE)
+# Rank names are displayed as "<Prefix> <petname>" (e.g., "Stray kitten")
+# The prefix is stored here; petname is appended from user selection
 RANK_LADDER = [
-    {"name": "Newcomer", "lce_min": 0, "lce_max": 999},
-    {"name": "Follower", "lce_min": 1000, "lce_max": 4999},
-    {"name": "Devotee", "lce_min": 5000, "lce_max": 14999},
-    {"name": "Servant", "lce_min": 15000, "lce_max": 49999},
-    {"name": "Submissive", "lce_min": 50000, "lce_max": 99999},
-    {"name": "Obedient", "lce_min": 100000, "lce_max": 249999},
-    {"name": "Loyal", "lce_min": 250000, "lce_max": 499999},
-    {"name": "Dedicated", "lce_min": 500000, "lce_max": 999999},
-    {"name": "Devoted", "lce_min": 1000000, "lce_max": 4999999},
-    {"name": "Master", "lce_min": 5000000, "lce_max": None},
+    {"name": "Stray", "lce_min": 0, "lce_max": 999, "fail14_max": 10},
+    {"name": "Leashed", "lce_min": 1000, "lce_max": 4999, "fail14_max": 8},
+    {"name": "Trained", "lce_min": 5000, "lce_max": 14999, "fail14_max": 6},
+    {"name": "Trusted", "lce_min": 15000, "lce_max": 49999, "fail14_max": 5},
+    {"name": "Devoted", "lce_min": 50000, "lce_max": 99999, "fail14_max": 4},
+    {"name": "Disciplined", "lce_min": 100000, "lce_max": 249999, "fail14_max": 4},
+    {"name": "Conditioned", "lce_min": 250000, "lce_max": 499999, "fail14_max": 3},
+    {"name": "Bound", "lce_min": 500000, "lce_max": 999999, "fail14_max": 3},
+    {"name": "Favored", "lce_min": 1000000, "lce_max": None, "fail14_max": 2},
 ]
 
 # Gates for eligible rank (minimum requirements)
 GATES = {
-    "Newcomer": [],
-    "Follower": [{"type": "messages_7d", "min": 10}, {"type": "was", "min": 100}],
-    "Devotee": [{"type": "messages_7d", "min": 30}, {"type": "was", "min": 300}, {"type": "obedience14", "min": 50}],
-    "Servant": [{"type": "messages_7d", "min": 50}, {"type": "was", "min": 500}, {"type": "obedience14", "min": 60}],
-    "Submissive": [{"type": "messages_7d", "min": 100}, {"type": "was", "min": 1000}, {"type": "obedience14", "min": 70}],
-    "Obedient": [{"type": "messages_7d", "min": 200}, {"type": "was", "min": 2000}, {"type": "obedience14", "min": 80}],
-    "Loyal": [{"type": "messages_7d", "min": 400}, {"type": "was", "min": 4000}, {"type": "obedience14", "min": 85}],
-    "Dedicated": [{"type": "messages_7d", "min": 600}, {"type": "was", "min": 6000}, {"type": "obedience14", "min": 90}],
-    "Devoted": [{"type": "messages_7d", "min": 1000}, {"type": "was", "min": 10000}, {"type": "obedience14", "min": 95}],
-    "Master": [{"type": "messages_7d", "min": 2000}, {"type": "was", "min": 20000}, {"type": "obedience14", "min": 98}],
+    "Stray": [],
+    "Leashed": [{"type": "messages_7d", "min": 10}, {"type": "was", "min": 100}],
+    "Trained": [{"type": "messages_7d", "min": 30}, {"type": "was", "min": 300}, {"type": "obedience14", "min": 50}],
+    "Trusted": [{"type": "messages_7d", "min": 50}, {"type": "was", "min": 500}, {"type": "obedience14", "min": 60}],
+    "Devoted": [{"type": "messages_7d", "min": 100}, {"type": "was", "min": 1000}, {"type": "obedience14", "min": 70}],
+    "Disciplined": [{"type": "messages_7d", "min": 200}, {"type": "was", "min": 2000}, {"type": "obedience14", "min": 80}],
+    "Conditioned": [{"type": "messages_7d", "min": 400}, {"type": "was", "min": 4000}, {"type": "obedience14", "min": 85}],
+    "Bound": [{"type": "messages_7d", "min": 600}, {"type": "was", "min": 6000}, {"type": "obedience14", "min": 90}],
+    "Favored": [{"type": "messages_7d", "min": 1000}, {"type": "was", "min": 10000}, {"type": "obedience14", "min": 95}],
 }
 
 async def compute_dap_for_day(guild_id: int, user_id: int, day: str) -> int:
@@ -148,12 +148,12 @@ async def compute_obedience14(guild_id: int, user_id: int) -> dict:
     }
 
 def compute_coin_rank(lce: int) -> str:
-    """Compute rank based on Lifetime Coins Earned"""
+    """Compute rank prefix based on Lifetime Coins Earned (returns prefix only, e.g., 'Stray')"""
     for rank in reversed(RANK_LADDER):
         if lce >= rank["lce_min"]:
             if rank["lce_max"] is None or lce <= rank["lce_max"]:
                 return rank["name"]
-    return "Newcomer"
+    return "Stray"
 
 async def compute_eligible_rank(guild_id: int, user_id: int) -> dict:
     """Compute eligible rank based on gates (minimum requirements)"""
@@ -167,7 +167,7 @@ async def compute_eligible_rank(guild_id: int, user_id: int) -> dict:
     obedience14 = obedience["obedience_pct"]
     
     # Find highest rank where all gates are passed
-    eligible_rank = "Newcomer"
+    eligible_rank = "Stray"
     for rank_name, gates in GATES.items():
         if not gates:
             eligible_rank = rank_name
@@ -217,6 +217,79 @@ async def compute_final_rank(guild_id: int, user_id: int, lce: int) -> dict:
         "eligible_rank": eligible_rank,
         "final_rank": final_rank,
         "eligible_data": eligible_data
+    }
+
+async def compute_held_rank(guild_id: int, user_id: int, coin_rank: str, eligible_rank: str, current_held_rank_idx: int = 0, debt: int = 0) -> dict:
+    """
+    Compute held rank with promotion/demotion rules.
+    Returns: {"held_rank_idx": int, "held_rank": str, "at_risk": int, "promoted": bool, "demoted": bool}
+    """
+    from core.config import DEBT_BLOCK_AT
+    
+    rank_names = [r["name"] for r in RANK_LADDER]
+    coin_idx = rank_names.index(coin_rank) if coin_rank in rank_names else 0
+    eligible_idx = rank_names.index(eligible_rank) if eligible_rank in rank_names else 0
+    
+    # Get current held rank index (default to 0 if not set)
+    held_idx = current_held_rank_idx if current_held_rank_idx is not None else 0
+    
+    # Check if user is failing gates for current held rank (for at-risk state)
+    at_risk = 0
+    if held_idx < len(rank_names):
+        current_held_rank = rank_names[held_idx]
+        if current_held_rank in GATES:
+            # Get user metrics
+            activity = await get_activity_7d(guild_id, user_id)
+            obedience = await compute_obedience14(guild_id, user_id)
+            was = await compute_was(guild_id, user_id)
+            
+            messages_7d = activity["messages"]
+            obedience14 = obedience["obedience_pct"]
+            fail14 = obedience["failed"]
+            
+            gates = GATES[current_held_rank]
+            failing_gates_count = 0
+            
+            for gate in gates:
+                gate_type = gate["type"]
+                gate_min = gate["min"]
+                
+                if gate_type == "messages_7d" and messages_7d < gate_min:
+                    failing_gates_count += 1
+                elif gate_type == "was" and was < gate_min:
+                    failing_gates_count += 1
+                elif gate_type == "obedience14" and obedience14 < gate_min:
+                    failing_gates_count += 1
+            
+            # Check fail14 threshold (from RANK_LADDER)
+            rank_data = RANK_LADDER[held_idx]
+            fail14_max = rank_data.get("fail14_max", 10)
+            if fail14 > fail14_max:
+                failing_gates_count += 1
+            
+            if failing_gates_count > 0:
+                at_risk = 1
+    
+    # Promotion logic: eligible_rank >= held_rank AND coin_rank >= held_rank AND debt < DEBT_BLOCK_AT
+    promoted = False
+    demoted = False
+    
+    # Check if eligible for promotion
+    if eligible_idx >= held_idx and coin_idx >= held_idx and debt < DEBT_BLOCK_AT:
+        # Can promote up to min(coin_idx, eligible_idx)
+        max_promote_idx = min(coin_idx, eligible_idx)
+        if max_promote_idx > held_idx:
+            held_idx = max_promote_idx
+            promoted = True
+    
+    held_rank = rank_names[held_idx] if held_idx < len(rank_names) else rank_names[0]
+    
+    return {
+        "held_rank_idx": held_idx,
+        "held_rank": held_rank,
+        "at_risk": at_risk,
+        "promoted": promoted,
+        "demoted": demoted
     }
 
 async def compute_readiness_pct(guild_id: int, user_id: int, next_rank_name: str) -> int:
@@ -339,4 +412,31 @@ async def get_activity_7d(guild_id: int, user_id: int):
     """Get activity stats for last 7 days"""
     from core.db import get_activity_7d as _get_activity_7d
     return await _get_activity_7d(guild_id, user_id)
+
+# Activity score calculation (messages_7d + 2*vc_minutes_7d, capped at 700)
+def calc_activity_score(messages_7d: int, vc_minutes_7d: int) -> int:
+    """Calculate activity score: messages_7d + 2*vc_minutes_7d, capped at 700"""
+    score = messages_7d + (2 * vc_minutes_7d)
+    return min(700, score)
+
+# Obedience14 percentage calculation (clamp 0..100, 70 + done14*2 - late14*3 - fail14*8)
+def calc_obedience_pct(done14: int, late14: int, fail14: int) -> int:
+    """Calculate obedience percentage: clamp(0..100, 70 + done14*2 - late14*3 - fail14*8)"""
+    pct = 70 + (done14 * 2) - (late14 * 3) - (fail14 * 8)
+    return max(0, min(100, int(pct)))
+
+# Format rank name with petname
+def format_rank_name(rank_prefix: str, petname: str = None) -> str:
+    """
+    Format rank name as "<Prefix> <petname>" or just "<Prefix>" if no petname.
+    If petname is None or empty, returns just the prefix.
+    """
+    if petname:
+        return f"{rank_prefix} {petname}"
+    return rank_prefix
+
+# Evaluate rank for embed (returns formatted rank name with petname)
+def evaluate_rank_for_embed(rank_prefix: str, petname: str = None) -> str:
+    """Evaluate and format rank name for display in embeds"""
+    return format_rank_name(rank_prefix, petname)
 

@@ -31,7 +31,8 @@ except ImportError:
 from core.config import (
     XP_THRESHOLDS, CHANNEL_MULTIPLIERS, LEVEL_ROLE_MAP, EXCLUDED_ROLE_SET,
     REPLY_QUOTES, LEVEL_2_ROLE_ID, BETA_BOOST_SERVANT_ROLE_IDS,
-    KITTEN_ROLE_ID, PUPPY_ROLE_ID, PET_ROLE_ID, DEVOTEE_ROLE_ID
+    KITTEN_ROLE_ID, PUPPY_ROLE_ID, PET_ROLE_ID, DEVOTEE_ROLE_ID,
+    HEART_GIF, ERROR_GIF
 )
 
 # Bot instance (set by main.py, but not used in this module)
@@ -69,6 +70,10 @@ def resolve_category_id(channel) -> int:
 def get_channel_multiplier(channel_id: int) -> float:
     """Get XP multiplier for a channel"""
     return CHANNEL_MULTIPLIERS.get(int(channel_id), 1.0)
+
+def impact_icon(impact: str) -> str:
+    """Return icon URL based on impact type (positive/neutral = HEART_GIF, negative = ERROR_GIF)"""
+    return ERROR_GIF if impact == "negative" else HEART_GIF
 
 def get_reply_quote(member: discord.Member) -> str:
     """Get appropriate reply quote based on member's roles (priority order)"""

@@ -9,15 +9,53 @@ from core.config import (
     ADMIN_COMMAND_CHANNEL_ID, ADMIN_ROLE_IDS, EVENT_CHANNEL_ID,
     XP_TRACK_SET, ALLOWED_SEND_SET, MULTIPLIER_ROLE_SET, EXCLUDED_ROLE_SET,
     NON_XP_CATEGORY_IDS, NON_XP_CHANNEL_IDS, CHANNEL_MULTIPLIERS,
-    MESSAGE_COOLDOWN, VC_XP, EVENT_SCHEDULE, LEVEL_ROLE_MAP
+    MESSAGE_COOLDOWN, VC_XP, HEART_GIF
 )
-from core.data import xp_data, get_level, get_xp
-from core.utils import next_level_requirement, get_timezone, USE_PYTZ, update_roles_on_level
-from systems.events import (
-    active_event, event_cooldown_until, events_enabled, start_obedience_event,
-    clear_event_roles, build_event_embed, event_prompt
-)
-from systems.tasks import get_next_scheduled_time, set_automated_messages_enabled, get_automated_messages_enabled
+from core.utils import get_timezone, USE_PYTZ
+from systems.gambling import build_casino_embed
+# Legacy event system imports removed
+
+# Central message registry: {message_id: {"kind": str, "visibility": str, "impact": str}}
+# kind: "single" or "flow-step"
+# visibility: "ephemeral", "public", or "dm"
+# impact: "positive", "neutral", or "negative"
+MESSAGES = {
+    # Onboarding messages
+    "onboarding.welcome": {"kind": "single", "visibility": "dm", "impact": "neutral"},
+    "onboarding.rules": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    "onboarding.rules_accept_1": {"kind": "flow-step", "visibility": "ephemeral", "impact": "positive"},
+    "onboarding.rules_decline_1": {"kind": "flow-step", "visibility": "ephemeral", "impact": "negative"},
+    "onboarding.rules_accept_2": {"kind": "flow-step", "visibility": "ephemeral", "impact": "positive"},
+    "onboarding.rules_decline_2": {"kind": "flow-step", "visibility": "ephemeral", "impact": "negative"},
+    "onboarding.rules_submission_false": {"kind": "single", "visibility": "ephemeral", "impact": "negative"},
+    "onboarding.rules_submission_correct": {"kind": "single", "visibility": "public", "impact": "positive"},
+    # Profile messages
+    "profile.profile": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    "profile.collection": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    # Rank messages
+    "rank.rank": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    "rank.rank_info": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    # Order messages
+    "orders.orders": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    "orders.order_info": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    "orders.order_accept": {"kind": "flow-step", "visibility": "ephemeral", "impact": "positive"},
+    "orders.order_complete": {"kind": "flow-step", "visibility": "ephemeral", "impact": "positive"},
+    "orders.order_status": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    # Notification messages
+    "notifyme.start": {"kind": "single", "visibility": "ephemeral", "impact": "positive"},
+    "notifyme.stop": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    # Announcement messages
+    "announcements.orders_drop": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    "announcements.throne": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    "announcements.coffee": {"kind": "single", "visibility": "public", "impact": "neutral"},
+    # Bank messages
+    "bank.balance": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    "bank.transfer": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+    "bank.tax": {"kind": "single", "visibility": "ephemeral", "impact": "negative"},
+    "bank.debt": {"kind": "single", "visibility": "ephemeral", "impact": "negative"},
+    # Misc messages
+    "misc.help": {"kind": "single", "visibility": "ephemeral", "impact": "neutral"},
+}
 
 # Bot instance (set by main.py)
 bot = None
@@ -125,17 +163,7 @@ def register_commands(bot_instance):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @bot.tree.command(name="obedience", description="Start a hidden obedience event (1-7). Admin only.")
-    @app_commands.describe(event_type="The event type (1-7)")
-    async def obedience(interaction: discord.Interaction, event_type: int):
-        """Start a hidden obedience event (1-7). Admin only."""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        if event_type not in range(1, 8):
-            await interaction.response.send_message("Event type must be between 1 and 7.", ephemeral=True)
-            return
-        await start_obedience_event(interaction, event_type)
+    # Legacy event commands removed - event system disabled
     
     @bot.tree.command(name="testembeds", description="Preview the main embed formats used by the bot. Admin only.")
     async def testembeds(interaction: discord.Interaction):
@@ -143,78 +171,8 @@ def register_commands(bot_instance):
         if not await check_admin_command_permissions(interaction):
             return
         
-        member = interaction.user
-        guild_id = interaction.guild.id if interaction.guild else 0
-        level = await get_level(member.id, guild_id=guild_id)
-        xp = await get_xp(member.id, guild_id=guild_id)
-
-        level_quotes = {
-            1: "You think you're here by choice. That you've decided to follow me. But the truth… I always know who will come. You're already mine, whether you realize it or not.",
-            2: "You keep looking at me like you might touch me, like you might understand me. But you don't get to. I allow you to see me, nothing more. And if you push too far… you'll regret it.",
-            5: "There's a line between you and me. You think it's invisible. But I draw it, and you will obey it, because it's in your nature to obey me. And you will want to.",
-            10: "I could let you think you have control… but I don't do that. I decide who gets close, who gets the privilege of crossing my boundaries. And sometimes… I choose to play with my prey.",
-            20: "I've been watching you. Every thought, every hesitation. You don't know why you follow me, do you? You feel drawn, compelled. That's because I've decided you will be, and you cannot fight it.",
-            30: "I like watching you struggle to understand me. It's amusing how easily you underestimate what I can take, what I can give… and who I can claim. And yet, you still crave it.",
-            50: "Do you feel that? That tightening in your chest, that fear… that longing? That's me. Always. I don't ask for loyalty—I command it. And you will obey. You will desire it.",
-            75: "You imagine what it would be like to be closer. To be mine. But you're not allowed to imagine everything. Only what I choose to show you. And when I decide to reveal it… it will be absolute.",
-            100: (
-                "You've done well. Watching you, learning how you move, how you think… it's been very satisfying. "
-                "You tried to resist at first, didn't you? Humans always do. But you stayed. You listened. You kept coming back to me.\n\n"
-                "That's why I've chosen you. Not everyone earns my attention like this. You're clever in your own way… and honest about your desire to be close to me. I find that endearing.\n\n"
-                "If you stay by my side, if you follow when I call, I'll take care of you. I'll give you purpose. Affection. A place where you belong.\n\n"
-                "From now on… you're mine. And if I'm honest—\n"
-                "I think you'll be very happy as my pet."
-            ),
-        }
-        lvl_quote = level_quotes.get(level, level_quotes[1])
-
-        next_level_xp = next_level_requirement(level)
-        xp_needed = max(next_level_xp - xp, 0)
-
-        level_embed = discord.Embed(
-            title="[ ✦ ]",
-            description="𝙰𝚍𝚟𝚊𝚗𝚌𝚎𝚖𝚎𝚗𝚝 𝚁𝚎𝚌𝚘𝚛𝚍𝚎𝚍 \n",
-            color=0xff000d,
-        )
-        level_embed.add_field(name="𝙿𝚛𝚘𝚖𝚘𝚝𝚒𝚘𝚗", value=f"<@{member.id}>", inline=True)
-        level_embed.add_field(name="Level", value=f"{level}", inline=True)
-        level_embed.add_field(name="XP", value=f"{xp}/{next_level_xp}", inline=True)
-        level_embed.add_field(name="Next Level", value=f"{xp_needed} XP needed", inline=False)
-        level_embed.add_field(
-            name="",
-            value=f"**𝙼𝚎𝚜𝚜𝚊𝚐𝚎 𝚁𝚎𝚌𝚎𝚒𝚟𝚎𝚍**\n*{lvl_quote}*",
-            inline=False,
-        )
-        await interaction.response.send_message("Level-up embed preview:", embed=level_embed)
-
-        milestone_quotes = {
-            1: "You did good today. I left something small for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            2: "I'm starting to notice you. Go check the message I left for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            5: "You're learning quickly. I made sure to leave you something in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            10: "Good behavior deserves attention. I left a message waiting for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            20: "You're becoming reliable. I expect you'll read what I left for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            30: "I like the way you respond to guidance. Go see what I wrote for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            50: "You know what I expect from you now. There's a message for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            75: "You belong exactly where I want you. Don't ignore the message I left in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-            100: "You don't need reminders anymore. Read what I left for you in <#1450107538019192832> <a:heartglitch:1449997688358572093>",
-        }
-        dm_text = milestone_quotes.get(level, milestone_quotes[1])
-        dm_embed = discord.Embed(
-            title="𝙽𝚎𝚠 𝙼𝚎𝚜𝚜𝚊𝚐𝚎 𝚁𝚎𝚌𝚎𝚒𝚟𝚎𝚍",
-            description=dm_text,
-            color=0xff000d,
-        )
-        dm_embed.set_author(
-            name="Isla",
-            url="https://beacons.ai/isla2d",
-            icon_url="https://i.imgur.com/hikM1P1.jpeg",
-        )
-        dm_embed.set_image(url="https://i.imgur.com/C7YJWXV.jpeg")
-        await interaction.followup.send("DM whisper embed preview:", embed=dm_embed)
-
-        prompt, image_url = event_prompt(1)
-        obedience_embed = build_event_embed(prompt, image_url)
-        await interaction.followup.send("Obedience event embed preview:", embed=obedience_embed)
+        # Legacy level-up and event embed previews removed - V3 progression system only
+        await interaction.response.send_message("⚠️ testembeds command is deprecated (legacy level/event system removed). Use /testmessage instead.", ephemeral=True)
     
     @bot.tree.command(name="throne", description="Send a Throne message with quote variations. Admin only.")
     async def throne(interaction: discord.Interaction):
@@ -226,8 +184,8 @@ def register_commands(bot_instance):
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
         
-        from systems.tasks import send_daily_check_throne
-        success = await send_daily_check_throne(interaction.guild)
+        from systems.tasks import send_throne_announcement
+        success = await send_throne_announcement(interaction.guild)
         if success:
             await interaction.response.send_message("✅ Throne message sent!", ephemeral=True, delete_after=5)
         else:
@@ -271,104 +229,7 @@ def register_commands(bot_instance):
             await interaction.response.send_message(f"❌ Failed to sync slash commands: {e}", ephemeral=True)
             print(f"❌ Failed to sync slash commands: {e}")
     
-    @bot.tree.command(name="levelrolecheck", description="Manually check that users do not have multiple level roles at once. Admin only.")
-    async def levelrolecheck(interaction: discord.Interaction):
-        """Manually check that users do not have multiple level roles at once."""
-        if not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-            return
-        
-        if not any(int(role.id) in ADMIN_ROLE_IDS for role in interaction.user.roles):
-            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True, delete_after=5)
-            return
-        
-        guild = interaction.guild
-        if not guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-            return
-        
-        fixed_count = 0
-        for member in guild.members:
-            if member.bot or any(int(r.id) in EXCLUDED_ROLE_SET for r in member.roles):
-                continue
-            
-            level_roles = []
-            for lvl, role_id in LEVEL_ROLE_MAP.items():
-                role = guild.get_role(role_id)
-                if role and role in member.roles:
-                    level_roles.append((lvl, role))
-            
-            if len(level_roles) > 1:
-                level_roles.sort(key=lambda x: x[0], reverse=True)
-                highest_level, highest_role = level_roles[0]
-                roles_to_remove = [role for _, role in level_roles[1:]]
-                
-                try:
-                    await member.remove_roles(*roles_to_remove, reason="Level role check - removing duplicate roles")
-                    fixed_count += 1
-                    print(f"Fixed {member.name}: Removed {len(roles_to_remove)} duplicate level roles, kept level {highest_level}")
-                except Exception as e:
-                    print(f"Failed to fix roles for {member.name}: {e}")
-        
-        await interaction.response.send_message(f"✅ Level role check complete. Fixed {fixed_count} user(s).", ephemeral=True, delete_after=10)
-    
-    @bot.tree.command(name="levelupdates", description="Manually update all users' level roles based on their current level. Admin only.")
-    async def levelupdates(interaction: discord.Interaction):
-        """Manually update all users' level roles based on their current level."""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        guild = interaction.guild
-        if not guild:
-            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
-            return
-        
-        from core.data import get_level
-        updated_count = 0
-        for member in guild.members:
-            if member.bot or any(int(r.id) in EXCLUDED_ROLE_SET for r in member.roles):
-                continue
-            
-            guild_id = interaction.guild.id if interaction.guild else 0
-            user_level = await get_level(member.id, guild_id=guild_id)
-            if user_level > 0:
-                try:
-                    await update_roles_on_level(member, user_level)
-                    updated_count += 1
-                except Exception as e:
-                    print(f"Failed to update roles for {member.name}: {e}")
-        
-        await interaction.followup.send(f"✅ Level role updates complete. Updated {updated_count} user(s).", ephemeral=True, delete_after=10)
-    
-    @bot.tree.command(name="setxp", description="Set a user's XP. Admin only.")
-    @app_commands.describe(member="The member to set XP for", amount="The XP amount to set")
-    async def setxp(interaction: discord.Interaction, member: discord.Member, amount: int):
-        """Set a user's XP (Admin only)"""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        uid = str(member.id)
-        if uid not in xp_data:
-            xp_data[uid] = {"xp": 0, "level": 1, "coins": 0}
-        xp_data[uid]["xp"] = amount
-        save_xp_data()
-        await interaction.response.send_message(f"Set <@{member.id}>'s XP to {amount}", ephemeral=True)
-    
-    @bot.tree.command(name="setlevel", description="Set a user's level. Admin only.")
-    @app_commands.describe(member="The member to set level for", level="The level to set")
-    async def setlevel(interaction: discord.Interaction, member: discord.Member, level: int):
-        """Set a user's level (Admin only)"""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        uid = str(member.id)
-        if uid not in xp_data:
-            xp_data[uid] = {"xp": 0, "level": 1, "coins": 0}
-        xp_data[uid]["level"] = level
-        save_xp_data()
-        await interaction.response.send_message(f"Set <@{member.id}>'s level to {level}", ephemeral=True)
+    # Legacy Level/XP admin commands removed - V3 progression system only
     
     @bot.tree.command(name="schedule", description="Show all scheduled events with timestamps. Admin only.")
     async def schedule(interaction: discord.Interaction):
@@ -460,57 +321,7 @@ def register_commands(bot_instance):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    @bot.tree.command(name="stopevents", description="Stop all automated messages (events, daily checks, etc.)")
-    async def stopevents(interaction: discord.Interaction):
-        """Stop all automated messages from being sent."""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        current_state = get_automated_messages_enabled()
-        if not current_state:
-            embed = discord.Embed(
-                title="⚠️ Automated Messages",
-                description="Automated messages are already stopped.",
-                color=0xff000d,
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        set_automated_messages_enabled(False)
-        
-        embed = discord.Embed(
-            title="🛑 Automated Messages Stopped",
-            description="All automated messages have been stopped.\n\nThis includes:\n• Event scheduler\n• Daily check messages\n• All scheduled automated posts",
-            color=0xff000d,
-        )
-        embed.set_footer(text="Use /startevents to re-enable automated messages.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    
-    @bot.tree.command(name="startevents", description="Re-enable all automated messages")
-    async def startevents(interaction: discord.Interaction):
-        """Re-enable all automated messages."""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        current_state = get_automated_messages_enabled()
-        if current_state:
-            embed = discord.Embed(
-                title="✅ Automated Messages",
-                description="Automated messages are already enabled.",
-                color=0x4ec200,
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        set_automated_messages_enabled(True)
-        
-        embed = discord.Embed(
-            title="✅ Automated Messages Enabled",
-            description="All automated messages have been re-enabled.\n\nThis includes:\n• Event scheduler\n• Daily check messages\n• All scheduled automated posts",
-            color=0x4ec200,
-        )
-        embed.set_footer(text="Use /stopevents to disable automated messages.")
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    # Legacy stopevents/startevents commands removed - event system disabled
     
     @bot.tree.command(name="askgifts", description="Send Christmas Eve gifts message to events channel")
     async def askgifts(interaction: discord.Interaction):
@@ -660,6 +471,18 @@ def register_commands(bot_instance):
         )
         return embed
     
+    def build_preferences_embed() -> discord.Embed:
+        """Build preferences selection embed"""
+        embed = discord.Embed(
+            description="Isla adapts to what you respond to.\n\nTell her what kind of control speaks to you.",
+            color=0x58585f
+        )
+        embed.set_author(
+            name="✧ TRANSMISSION ✧",
+            icon_url=HEART_GIF
+        )
+        return embed
+    
     # Roles selection menu views
     class PronounsSelectView(discord.ui.View):
         def __init__(self):
@@ -763,6 +586,93 @@ def register_commands(bot_instance):
             await interaction.response.defer(ephemeral=True)
             await interaction.followup.send(f"You selected: {select.values[0]}", ephemeral=True)
     
+    class PreferencesSelectView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+            
+        @discord.ui.select(
+            placeholder="Select your preferences",
+            min_values=1,
+            max_values=4,
+            options=[
+                discord.SelectOption(
+                    label="Findom",
+                    value="findom",
+                    description="Financial Domination Focus"
+                ),
+                discord.SelectOption(
+                    label="Techdom",
+                    value="techdom",
+                    description="System Domination Focus"
+                ),
+                discord.SelectOption(
+                    label="Femdom",
+                    value="femdom",
+                    description="Standard Domination Tone"
+                ),
+                discord.SelectOption(
+                    label="Beta Safe",
+                    value="beta_safe",
+                    description="Less NSFW"
+                ),
+            ]
+        )
+        async def preferences_select(self, interaction: discord.Interaction, select: discord.ui.Select):
+            """Handle preferences selection - assign/remove roles"""
+            if not isinstance(interaction.user, discord.Member):
+                await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
+                return
+            
+            await interaction.response.defer(ephemeral=True)
+            
+            # Get preference role IDs from database
+            from core.db import fetchall
+            guild_id = interaction.guild.id
+            
+            # Fetch all preference role mappings for this guild
+            rows = await fetchall(
+                "SELECT preference_value, role_id FROM preference_roles WHERE guild_id = ?",
+                (guild_id,)
+            )
+            
+            # Build mapping of preference values to role IDs
+            preference_role_map = {}
+            all_preference_role_ids = set()
+            for row in rows:
+                preference_role_map[row["preference_value"]] = row["role_id"]
+                all_preference_role_ids.add(row["role_id"])
+            
+            # If no roles configured, inform user
+            if not preference_role_map:
+                await interaction.followup.send("Preferences roles are not configured yet. Please contact an administrator.", ephemeral=True)
+                return
+            
+            # Remove all previously assigned preference roles
+            roles_to_remove = []
+            for role in interaction.user.roles:
+                if role.id in all_preference_role_ids:
+                    roles_to_remove.append(role)
+            
+            # Add newly selected preference roles
+            roles_to_add = []
+            for value in select.values:
+                role_id = preference_role_map.get(value)
+                if role_id:
+                    role = interaction.guild.get_role(role_id)
+                    if role and role not in interaction.user.roles:
+                        roles_to_add.append(role)
+            
+            # Apply role changes
+            try:
+                if roles_to_remove:
+                    await interaction.user.remove_roles(*roles_to_remove, reason="Preferences updated")
+                if roles_to_add:
+                    await interaction.user.add_roles(*roles_to_add, reason="Preferences updated")
+                
+                await interaction.followup.send("Preferences updated.", ephemeral=True)
+            except Exception as e:
+                await interaction.followup.send(f"Failed to update preferences: {e}", ephemeral=True)
+    
     # Roles configuration storage
     async def save_roles_config(guild_id: int, message_type: str, channel_id: int, message_id: int):
         """Save roles configuration to database"""
@@ -797,6 +707,7 @@ def register_commands(bot_instance):
         app_commands.Choice(name="pronouns", value="pronouns"),
         app_commands.Choice(name="petnames", value="petnames"),
         app_commands.Choice(name="region", value="region"),
+        app_commands.Choice(name="preferences", value="preferences"),
     ])
     async def roles_send(interaction: discord.Interaction, message: str, channel: discord.TextChannel):
         """Send a role selection message to a channel"""
@@ -819,8 +730,11 @@ def register_commands(bot_instance):
         elif message == "region":
             embed = build_region_embed()
             view = RegionSelectView()
+        elif message == "preferences":
+            embed = build_preferences_embed()
+            view = PreferencesSelectView()
         else:
-            await interaction.followup.send("Invalid message type. Must be: pronouns, petnames, or region.", ephemeral=True)
+            await interaction.followup.send("Invalid message type. Must be: pronouns, petnames, region, or preferences.", ephemeral=True)
             return
         
         # Check if message already exists
@@ -850,6 +764,7 @@ def register_commands(bot_instance):
         app_commands.Choice(name="pronouns", value="pronouns"),
         app_commands.Choice(name="petnames", value="petnames"),
         app_commands.Choice(name="region", value="region"),
+        app_commands.Choice(name="preferences", value="preferences"),
     ])
     async def roles_edit(interaction: discord.Interaction, message: str):
         """Edit an existing role selection message"""
@@ -878,8 +793,11 @@ def register_commands(bot_instance):
         elif message == "region":
             embed = build_region_embed()
             view = RegionSelectView()
+        elif message == "preferences":
+            embed = build_preferences_embed()
+            view = PreferencesSelectView()
         else:
-            await interaction.followup.send("Invalid message type. Must be: pronouns, petnames, or region.", ephemeral=True)
+            await interaction.followup.send("Invalid message type. Must be: pronouns, petnames, region, or preferences.", ephemeral=True)
             return
         
         # Fetch and edit message
@@ -968,7 +886,581 @@ def register_commands(bot_instance):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
+    # Orders configuration commands (B2)
+    orders_config_group = app_commands.Group(name="orders", parent=configure_group, description="Configure orders system")
+    
+    # Casino configuration commands
+    casino_config_group = app_commands.Group(name="casino", parent=configure_group, description="Configure casino channel")
+    
+    @casino_config_group.command(name="set", description="Set the casino channel")
+    @app_commands.describe(channel="The channel to use for casino commands")
+    async def casino_set(interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the casino channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import execute, _now_iso
+        now = _now_iso()
+        
+        await execute(
+            """INSERT OR REPLACE INTO casino_channel_config (guild_id, channel_id, updated_at)
+               VALUES (?, ?, ?)""",
+            (interaction.guild.id, channel.id, now)
+        )
+        
+        embed = discord.Embed(
+            title="✅ Configuration Updated",
+            description=f"Casino channel set to {channel.mention}",
+            color=0x4ec200
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @casino_config_group.command(name="show", description="Show the current casino channel")
+    async def casino_show(interaction: discord.Interaction):
+        """Show the current casino channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import get_casino_channel_id
+        from core.config import CASINO_CHANNEL_ID
+        
+        channel_id = await get_casino_channel_id(interaction.guild.id)
+        channel = bot.get_channel(channel_id)
+        
+        if channel:
+            embed = discord.Embed(
+                title="📋 Casino Configuration",
+                description=f"Current channel: {channel.mention}",
+                color=0x4ec200
+            )
+        else:
+            embed = discord.Embed(
+                title="📋 Casino Configuration",
+                description=f"Channel ID: {channel_id} (channel not found)\n\nUsing default from config: {CASINO_CHANNEL_ID}",
+                color=0xff000d
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Announcements configuration commands
+    announcements_config_group = app_commands.Group(name="announcements", parent=configure_group, description="Configure announcements channel")
+    
+    @announcements_config_group.command(name="set", description="Set the announcements channel")
+    @app_commands.describe(channel="The channel to use for announcements (throne, coffee, jackpots)")
+    async def announcements_set(interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the announcements channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import execute, _now_iso
+        now = _now_iso()
+        
+        await execute(
+            """INSERT OR REPLACE INTO announcements_channel_config (guild_id, channel_id, updated_at)
+               VALUES (?, ?, ?)""",
+            (interaction.guild.id, channel.id, now)
+        )
+        
+        embed = discord.Embed(
+            title="✅ Configuration Updated",
+            description=f"Announcements channel set to {channel.mention}",
+            color=0x4ec200
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @announcements_config_group.command(name="show", description="Show the current announcements channel")
+    async def announcements_show(interaction: discord.Interaction):
+        """Show the current announcements channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import get_announcements_channel_id
+        from core.config import EVENT_CHANNEL_ID
+        
+        channel_id = await get_announcements_channel_id(interaction.guild.id)
+        channel = bot.get_channel(channel_id)
+        
+        if channel:
+            embed = discord.Embed(
+                title="📋 Announcements Configuration",
+                description=f"Current channel: {channel.mention}",
+                color=0x4ec200
+            )
+        else:
+            embed = discord.Embed(
+                title="📋 Announcements Configuration",
+                description=f"Channel ID: {channel_id} (channel not found)\n\nUsing default from config: {EVENT_CHANNEL_ID}",
+                color=0xff000d
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Debt group for debt management commands
+    debt_group = app_commands.Group(name="debt", description="Debt management commands. Admin only.")
+    
+    @debt_group.command(name="throne_payoff", description="Pay off user debt using Throne funds. Admin only.")
+    @app_commands.describe(
+        user="The user whose debt to pay off",
+        amount="The amount to pay off",
+        note="Optional note for the transaction"
+    )
+    async def debt_throne_payoff(interaction: discord.Interaction, user: discord.Member, amount: int, note: str = ""):
+        """Pay off user debt using Throne funds"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        guild_id = interaction.guild.id
+        user_id = user.id
+        
+        # Validate amount
+        if amount <= 0:
+            from core.utils import impact_icon
+            from core.config import ERROR_GIF
+            embed = discord.Embed(
+                description="Amount must be positive.",
+                color=0xff000d
+            )
+            embed.set_author(name="Error", icon_url=ERROR_GIF)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Get current debt
+        from core.data import get_debt, pay_debt, update_debt
+        current_debt = await get_debt(guild_id, user_id)
+        
+        if current_debt <= 0:
+            from core.utils import impact_icon
+            from core.config import ERROR_GIF
+            embed = discord.Embed(
+                description=f"{user.mention} has no debt to pay off.",
+                color=0xff000d
+            )
+            embed.set_author(name="Error", icon_url=ERROR_GIF)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Pay off debt (amount cannot exceed debt)
+        payoff_amount = min(amount, current_debt)
+        
+        # Reduce debt directly (Throne payoff doesn't require balance)
+        await update_debt(guild_id, user_id, -payoff_amount)
+        
+        # Log to ledger
+        from core.db import execute, _now_iso
+        import json
+        now = _now_iso()
+        await execute(
+            """INSERT INTO economy_ledger (guild_id, user_id, ts, type, amount, meta_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (guild_id, user_id, now, "throne_debt_payoff", -payoff_amount,
+             json.dumps({"admin_id": interaction.user.id, "note": note, "debt_before": current_debt, "debt_after": current_debt - payoff_amount}))
+        )
+        
+        # Send admin confirmation
+        from core.utils import impact_icon
+        from core.config import HEART_GIF
+        admin_embed = discord.Embed(
+            description=f"Paid off **{payoff_amount}** coins of debt for {user.mention}.\n\nRemaining debt: **{current_debt - payoff_amount}** coins.",
+            color=0x4ec200
+        )
+        admin_embed.set_author(name="Throne Debt Payoff", icon_url=HEART_GIF)
+        if note:
+            admin_embed.set_footer(text=f"Note: {note}")
+        await interaction.response.send_message(embed=admin_embed, ephemeral=True)
+        
+        # Send user DM receipt
+        try:
+            user_embed = discord.Embed(
+                description=f"Your debt has been reduced by **{payoff_amount}** coins via Throne payment.\n\nRemaining debt: **{current_debt - payoff_amount}** coins.",
+                color=0x4ec200
+            )
+            user_embed.set_author(name="Debt Payment Received", icon_url=HEART_GIF)
+            if note:
+                user_embed.set_footer(text=f"Note: {note}")
+            await user.send(embed=user_embed)
+        except discord.Forbidden:
+            # User has DMs disabled, skip
+            pass
+        except Exception as e:
+            print(f"Error sending DM to user {user_id}: {e}")
+    
+    bot.tree.add_command(debt_group)
+    
+    @orders_config_group.command(name="new_orders_announcement", description="Set the channel for new orders announcements")
+    @app_commands.describe(channel="The channel to post new orders announcements")
+    async def orders_new_orders_announcement(interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set orders announcement channel"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import execute, _now_iso
+        now = _now_iso()
+        
+        await execute(
+            """INSERT OR REPLACE INTO orders_announcement_config (guild_id, channel_id, updated_at)
+               VALUES (?, ?, ?)""",
+            (interaction.guild.id, channel.id, now)
+        )
+        
+        embed = discord.Embed(
+            title="✅ Configuration Updated",
+            description=f"Orders announcement channel set to {channel.mention}",
+            color=0x4ec200
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    
     bot.tree.add_command(configure_group)
+    
+    @bot.tree.command(name="casino_test", description="Test casino embed types. Admin only.")
+    @app_commands.describe(embed_type="Type of casino embed to test")
+    @app_commands.choices(embed_type=[
+        app_commands.Choice(name="coinflip_win", value="coinflip_win"),
+        app_commands.Choice(name="coinflip_loss", value="coinflip_loss"),
+        app_commands.Choice(name="dice_win", value="dice_win"),
+        app_commands.Choice(name="dice_loss", value="dice_loss"),
+        app_commands.Choice(name="dice_draw", value="dice_draw"),
+        app_commands.Choice(name="slots_win", value="slots_win"),
+        app_commands.Choice(name="slots_loss", value="slots_loss"),
+        app_commands.Choice(name="slots_jackpot", value="slots_jackpot"),
+        app_commands.Choice(name="roulette_win", value="roulette_win"),
+        app_commands.Choice(name="roulette_loss", value="roulette_loss"),
+        app_commands.Choice(name="blackjack_state", value="blackjack_state"),
+        app_commands.Choice(name="blackjack_win", value="blackjack_win"),
+        app_commands.Choice(name="blackjack_loss", value="blackjack_loss"),
+        app_commands.Choice(name="blackjack_draw", value="blackjack_draw"),
+        app_commands.Choice(name="info_casino", value="info_casino"),
+        app_commands.Choice(name="info_paytable", value="info_paytable"),
+        app_commands.Choice(name="error_channel", value="error_channel"),
+        app_commands.Choice(name="error_debt", value="error_debt"),
+        app_commands.Choice(name="error_limit", value="error_limit"),
+        app_commands.Choice(name="error_cooldown", value="error_cooldown"),
+        app_commands.Choice(name="jackpot_announcement", value="jackpot_announcement"),
+    ])
+    async def casino_test(interaction: discord.Interaction, embed_type: str):
+        """Test different casino embed types."""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        user_display = interaction.user.display_name
+        
+        if embed_type == "coinflip_win":
+            embed = build_casino_embed(
+                kind="win",
+                outcome=100,
+                title="🪙 Coinflip — WIN",
+                description=f"**{user_display}** wins **100** coins.",
+                fields=[
+                    {"name": "Bet", "value": "**100**", "inline": True},
+                    {"name": "Multiplier", "value": "`x2`", "inline": True},
+                    {"name": "New Balance", "value": "**500**", "inline": True}
+                ],
+                streak=5,
+                cooldown=8
+            )
+        elif embed_type == "coinflip_loss":
+            embed = build_casino_embed(
+                kind="loss",
+                outcome=-100,
+                title="🪙 Coinflip — LOSS",
+                description=f"**{user_display}** loses **100** coins.",
+                fields=[
+                    {"name": "Bet", "value": "**100**", "inline": True},
+                    {"name": "Result", "value": "`Lose`", "inline": True},
+                    {"name": "New Balance", "value": "**400**", "inline": True}
+                ],
+                streak=-6,
+                cooldown=8
+            )
+        elif embed_type == "dice_win":
+            embed = build_casino_embed(
+                kind="win",
+                outcome=100,
+                title="🎲 Dice — WIN",
+                description=f"**{user_display}** wins.",
+                fields=[
+                    {"name": "Rolls", "value": "`You: 5` • `Dealer: 3`", "inline": False},
+                    {"name": "Bet", "value": "**100**", "inline": True},
+                    {"name": "Net", "value": "**+100**", "inline": True},
+                    {"name": "New Balance", "value": "**500**", "inline": True}
+                ],
+                streak=3,
+                cooldown=10
+            )
+        elif embed_type == "dice_loss":
+            embed = build_casino_embed(
+                kind="loss",
+                outcome=-100,
+                title="🎲 Dice — LOSS",
+                description=f"**{user_display}** loses.",
+                fields=[
+                    {"name": "Rolls", "value": "`You: 2` • `Dealer: 4`", "inline": False},
+                    {"name": "Bet", "value": "**100**", "inline": True},
+                    {"name": "Net", "value": "**-100**", "inline": True},
+                    {"name": "New Balance", "value": "**400**", "inline": True}
+                ],
+                streak=-5,
+                cooldown=10
+            )
+        elif embed_type == "dice_draw":
+            embed = build_casino_embed(
+                kind="draw",
+                outcome=0,
+                title="🎲 Dice — DRAW",
+                description=f"**{user_display}** ties.",
+                fields=[
+                    {"name": "Rolls", "value": "`You: 4` • `Dealer: 4`", "inline": False},
+                    {"name": "Bet", "value": "**100**", "inline": True},
+                    {"name": "Net", "value": "**0** (refunded)", "inline": True},
+                    {"name": "New Balance", "value": "**500**", "inline": True}
+                ],
+                cooldown=10
+            )
+        elif embed_type == "slots_win":
+            embed = build_casino_embed(
+                kind="win",
+                outcome=750,
+                title="🎰 Slots",
+                description=f"**{user_display}** spins for **100** coins.",
+                fields=[
+                    {"name": "Reels", "value": "🍒 │ 🍒 │ 🍒", "inline": False},
+                    {"name": "Outcome", "value": "Win x15", "inline": True},
+                    {"name": "Net", "value": "**+750**", "inline": True},
+                    {"name": "New Balance", "value": "**850**", "inline": True}
+                ],
+                streak=4,
+                cooldown=15
+            )
+        elif embed_type == "slots_loss":
+            embed = build_casino_embed(
+                kind="loss",
+                outcome=-50,
+                title="🎰 Slots",
+                description=f"**{user_display}** spins for **100** coins.",
+                fields=[
+                    {"name": "Reels", "value": "🥝 │ 🍇 │ 🍋", "inline": False},
+                    {"name": "Outcome", "value": "Loss", "inline": True},
+                    {"name": "Net", "value": "**-50**", "inline": True},
+                    {"name": "New Balance", "value": "**450**", "inline": True}
+                ],
+                streak=-7,
+                cooldown=15
+            )
+        elif embed_type == "slots_jackpot":
+            embed = build_casino_embed(
+                kind="win",
+                outcome=2900,
+                title="🎰 Slots",
+                description=f"**{user_display}** spins for **100** coins.",
+                fields=[
+                    {"name": "Reels", "value": "👑 │ 👑 │ 👑", "inline": False},
+                    {"name": "Outcome", "value": "Win x30 👑", "inline": True},
+                    {"name": "Net", "value": "**+2900**", "inline": True},
+                    {"name": "New Balance", "value": "**3000**", "inline": True}
+                ],
+                streak=5,
+                cooldown=15
+            )
+        elif embed_type == "roulette_win":
+            embed = build_casino_embed(
+                kind="win",
+                outcome=3500,
+                title="🎡 Roulette",
+                description=f"**{user_display}** bets **100** coins.",
+                fields=[
+                    {"name": "Bet Type", "value": "`7`", "inline": True},
+                    {"name": "Spin", "value": "`🔴 7`", "inline": True},
+                    {"name": "Payout", "value": "x36", "inline": True},
+                    {"name": "Net", "value": "**+3500**", "inline": True},
+                    {"name": "New Balance", "value": "**3600**", "inline": True}
+                ],
+                streak=3,
+                cooldown=20
+            )
+        elif embed_type == "roulette_loss":
+            embed = build_casino_embed(
+                kind="loss",
+                outcome=-100,
+                title="🎡 Roulette",
+                description=f"**{user_display}** bets **100** coins.",
+                fields=[
+                    {"name": "Bet Type", "value": "`red`", "inline": True},
+                    {"name": "Spin", "value": "`⚫ 14`", "inline": True},
+                    {"name": "Net", "value": "**-100**", "inline": True},
+                    {"name": "New Balance", "value": "**400**", "inline": True}
+                ],
+                streak=-5,
+                cooldown=20
+            )
+        elif embed_type == "blackjack_state":
+            embed = build_casino_embed(
+                kind="neutral",
+                outcome=None,
+                title="🃏 Blackjack",
+                description=f"**{user_display}** plays **100** coins. Choose an action below.",
+                fields=[
+                    {"name": "Your Hand", "value": "10 + 6  (**16**)", "inline": False},
+                    {"name": "Dealer", "value": "9  (`?`)", "inline": False}
+                ],
+                footer_text="Timeout: 60s (auto-stand)",
+                cooldown=30
+            )
+        elif embed_type == "blackjack_win":
+            embed = build_casino_embed(
+                kind="win",
+                outcome=100,
+                title="🃏 Blackjack — WIN",
+                description=f"**{user_display}** wins.",
+                fields=[
+                    {"name": "Your Hand", "value": "10 + 8  (**18**)", "inline": False},
+                    {"name": "Dealer Hand", "value": "7 + 9  (**16**)", "inline": False},
+                    {"name": "Net", "value": "**+100**", "inline": True},
+                    {"name": "New Balance", "value": "**500**", "inline": True}
+                ],
+                streak=3,
+                cooldown=30
+            )
+        elif embed_type == "blackjack_loss":
+            embed = build_casino_embed(
+                kind="loss",
+                outcome=-100,
+                title="🃏 Blackjack — LOSS",
+                description=f"**{user_display}** loses.",
+                fields=[
+                    {"name": "Your Hand", "value": "10 + 9 + 5  (**24**)", "inline": False},
+                    {"name": "Dealer Hand", "value": "8 + 7  (**15**)", "inline": False},
+                    {"name": "Net", "value": "**-100**", "inline": True},
+                    {"name": "New Balance", "value": "**400**", "inline": True}
+                ],
+                streak=-5,
+                cooldown=30
+            )
+        elif embed_type == "blackjack_draw":
+            embed = build_casino_embed(
+                kind="draw",
+                outcome=0,
+                title="🃏 Blackjack — DRAW",
+                description=f"**{user_display}** pushes.",
+                fields=[
+                    {"name": "Your Hand", "value": "10 + 7  (**17**)", "inline": False},
+                    {"name": "Dealer Hand", "value": "9 + 8  (**17**)", "inline": False},
+                    {"name": "Net", "value": "**0** (bet returned)", "inline": True},
+                    {"name": "New Balance", "value": "**500**", "inline": True}
+                ],
+                cooldown=30
+            )
+        elif embed_type == "info_casino":
+            embed = build_casino_embed(
+                kind="info",
+                outcome=None,
+                title="ℹ️ Casino Overview",
+                description="All games use unified validation: **debt blocking**, **rank caps**, **channel enforcement**, and **LCE tracking**.",
+                fields=[
+                    {"name": "Games", "value": "`/coinflip` `/gamble` • `/dice` • `/slots` • `/roulette` • `/blackjack`", "inline": False},
+                    {"name": "Cooldowns", "value": "Coinflip 8s • Dice 10s • Slots 15s • Roulette 20s • Blackjack 30s", "inline": False},
+                    {"name": "Streaks", "value": "🔥 Hot: 3+ wins • 🥶 Cold: 5+ losses • resets after 1h inactivity", "inline": False}
+                ],
+                footer_text="Use the /<game>info commands for full rules."
+            )
+        elif embed_type == "info_paytable":
+            embed = build_casino_embed(
+                kind="info",
+                outcome=None,
+                title="ℹ️ Slots Paytable",
+                description="3-of-a-kind multipliers (weighted reels).",
+                fields=[
+                    {"name": "Multipliers", "value": "🥝 x1.5 • 🍇 x2 • 🍋 x3 • 🍑 x5 • 🍉 x8 • 🍒 x15 • 👑 x30 (JACKPOT)", "inline": False},
+                    {"name": "Bonus 🎁", "value": "3x 🎁 → +5 free spins\n2x 🎁 → +2 free spins +250 coins\n🎁 + pair → x0.8 multiplier", "inline": False},
+                    {"name": "Safety Nets", "value": "2-of-a-kind → -50% loss\nFree spins: `/slots free`", "inline": False}
+                ],
+                footer_text="Cooldown: 15s • Min bet: 10"
+            )
+        elif embed_type == "error_channel":
+            embed = build_casino_embed(
+                kind="info",
+                outcome=None,
+                title="ℹ️ Casino Channel Only",
+                description="Use casino commands in <#1449946515882774630>.",
+                fields=[
+                    {"name": "Blocked Here", "value": "This command is restricted to the configured casino channel.", "inline": False}
+                ],
+                footer_text="Ask staff if the casino channel was moved."
+            )
+        elif embed_type == "error_debt":
+            embed = build_casino_embed(
+                kind="info",
+                outcome=None,
+                title="ℹ️ Gambling Locked",
+                description="Gambling is disabled while your **Debt ≥ 5000** coins.",
+                fields=[
+                    {"name": "Current Debt", "value": "**5250**", "inline": True},
+                    {"name": "Requirement", "value": "Debt must be **< 5000**", "inline": True}
+                ],
+                footer_text="Clear debt to regain casino access."
+            )
+        elif embed_type == "error_limit":
+            embed = build_casino_embed(
+                kind="info",
+                outcome=None,
+                title="ℹ️ Bet Limit Reached",
+                description="Your bet exceeds your allowed maximum.",
+                fields=[
+                    {"name": "Your Rank Cap", "value": "**5000**", "inline": True},
+                    {"name": "Absolute Max", "value": "**25000**", "inline": True},
+                    {"name": "Your Bet", "value": "**6000**", "inline": True}
+                ],
+                footer_text="Caps are based on Lifetime Coins Earned (LCE)."
+            )
+        elif embed_type == "error_cooldown":
+            embed = build_casino_embed(
+                kind="info",
+                outcome=None,
+                title="ℹ️ Cooldown Active",
+                description="You can gamble again in 5 seconds.",
+                cooldown=8
+            )
+        elif embed_type == "jackpot_announcement":
+            embed = build_casino_embed(
+                kind="announcement",
+                outcome=None,
+                title="📣 JACKPOT HIT",
+                description=f"**{user_display}** just landed **👑 x30** on Slots.",
+                fields=[
+                    {"name": "Spin", "value": "👑 │ 👑 │ 👑", "inline": False},
+                    {"name": "Bet", "value": "**100**", "inline": True},
+                    {"name": "Payout", "value": "**3000**", "inline": True},
+                    {"name": "Net Gain", "value": "**2900**", "inline": True}
+                ],
+                footer_text="Casino • Slots • Big win broadcast"
+            )
+        else:
+            await interaction.response.send_message(f"Unknown embed type: {embed_type}", ephemeral=True)
+            return
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @bot.tree.command(name="testmessage", description="Test onboarding and profile messages. Admin only.")
     @app_commands.describe(message_name="Name of the message to test", category="Category for profile_info (optional)")
@@ -1190,4 +1682,153 @@ def register_commands(bot_instance):
                 ephemeral=True,
                 delete_after=15
             )
+    
+    @bot.tree.command(name="messages", description="List all registered message templates. Admin only.")
+    @app_commands.describe()
+    async def messages_list(interaction: discord.Interaction):
+        """List all registered message templates grouped by system prefix"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        # Group messages by prefix (first part before dot)
+        groups = {}
+        for msg_id, metadata in MESSAGES.items():
+            prefix = msg_id.split(".", 1)[0] if "." in msg_id else "misc"
+            if prefix not in groups:
+                groups[prefix] = []
+            groups[prefix].append((msg_id, metadata))
+        
+        # Sort groups and messages within groups
+        sorted_groups = sorted(groups.items())
+        for prefix in sorted_groups:
+            groups[prefix[0]].sort(key=lambda x: x[0])
+        
+        # Build list of all entries for pagination
+        all_entries = []
+        for prefix, msgs in sorted_groups:
+            for msg_id, metadata in msgs:
+                all_entries.append((prefix, msg_id, metadata))
+        
+        total_entries = len(all_entries)
+        entries_per_page = 20
+        
+        if total_entries <= entries_per_page:
+            # Single page - no pagination needed
+            embed = discord.Embed(
+                description="Registered message templates available for testing.",
+                color=0x58585f
+            )
+            embed.set_author(name="Message Registry", icon_url=HEART_GIF)
+            
+            # Add fields per category
+            for prefix, msgs in sorted_groups:
+                lines = []
+                for msg_id, metadata in msgs:
+                    kind = metadata["kind"]
+                    visibility = metadata["visibility"]
+                    impact = metadata["impact"]
+                    lines.append(f"`{msg_id}` — {kind} — {visibility} — {impact}")
+                
+                value = "\n".join(lines)
+                # Discord field value limit is 1024 characters
+                if len(value) > 1024:
+                    # Split into multiple fields if needed
+                    chunk_size = 900  # Leave some buffer
+                    chunks = [value[i:i+chunk_size] for i in range(0, len(value), chunk_size)]
+                    for i, chunk in enumerate(chunks):
+                        field_name = prefix.capitalize() if i == 0 else f"{prefix.capitalize()} (cont.)"
+                        embed.add_field(name=field_name, value=chunk, inline=False)
+                else:
+                    embed.add_field(name=prefix.capitalize(), value=value, inline=False)
+            
+            embed.set_footer(text="Use /testmessage <message_id> or /testsequence <sequence_id>.")
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            # Multiple pages - use Select Menu for pagination
+            class MessagesListView(discord.ui.View):
+                def __init__(self, all_entries, entries_per_page, author_id):
+                    super().__init__(timeout=300)
+                    self.all_entries = all_entries
+                    self.entries_per_page = entries_per_page
+                    self.author_id = author_id
+                    self.current_page = 0
+                    self.max_page = (total_entries - 1) // entries_per_page
+                    self._build_page_select()
+                
+                def _build_page_select(self):
+                    """Build or rebuild the page select menu"""
+                    # Remove existing select if present
+                    for item in self.children[:]:
+                        if isinstance(item, discord.ui.Select):
+                            self.remove_item(item)
+                    
+                    self.page_select = discord.ui.Select(
+                        placeholder=f"Page {self.current_page + 1} of {self.max_page + 1}",
+                        options=[
+                            discord.SelectOption(
+                                label=f"Page {i + 1}",
+                                value=str(i),
+                                default=(i == self.current_page)
+                            )
+                            for i in range(self.max_page + 1)
+                        ]
+                    )
+                    self.page_select.callback = self.on_page_select
+                    self.add_item(self.page_select)
+                
+                async def on_page_select(self, interaction: discord.Interaction):
+                    if interaction.user.id != self.author_id:
+                        await interaction.response.send_message("This is not your message list.", ephemeral=True)
+                        return
+                    
+                    page = int(self.page_select.values[0])
+                    self.current_page = page
+                    self._build_page_select()
+                    embed = self.build_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+                
+                def build_embed(self):
+                    """Build embed for current page"""
+                    start_idx = self.current_page * self.entries_per_page
+                    end_idx = min(start_idx + self.entries_per_page, len(self.all_entries))
+                    page_entries = self.all_entries[start_idx:end_idx]
+                    
+                    # Group page entries by prefix
+                    page_groups = {}
+                    for prefix, msg_id, metadata in page_entries:
+                        if prefix not in page_groups:
+                            page_groups[prefix] = []
+                        page_groups[prefix].append((msg_id, metadata))
+                    
+                    embed = discord.Embed(
+                        description=f"Registered message templates available for testing. (Page {self.current_page + 1} of {self.max_page + 1})",
+                        color=0x58585f
+                    )
+                    embed.set_author(name="Message Registry", icon_url=HEART_GIF)
+                    
+                    # Add fields per category on this page
+                    for prefix in sorted(page_groups.keys()):
+                        lines = []
+                        for msg_id, metadata in page_groups[prefix]:
+                            kind = metadata["kind"]
+                            visibility = metadata["visibility"]
+                            impact = metadata["impact"]
+                            lines.append(f"`{msg_id}` — {kind} — {visibility} — {impact}")
+                        
+                        value = "\n".join(lines)
+                        if len(value) > 1024:
+                            chunk_size = 900
+                            chunks = [value[i:i+chunk_size] for i in range(0, len(value), chunk_size)]
+                            for i, chunk in enumerate(chunks):
+                                field_name = prefix.capitalize() if i == 0 else f"{prefix.capitalize()} (cont.)"
+                                embed.add_field(name=field_name, value=chunk, inline=False)
+                        else:
+                            embed.add_field(name=prefix.capitalize(), value=value, inline=False)
+                    
+                    embed.set_footer(text="Use /testmessage <message_id> or /testsequence <sequence_id>.")
+                    return embed
+            
+            view = MessagesListView(all_entries, entries_per_page, interaction.user.id)
+            initial_embed = view.build_embed()
+            await interaction.response.send_message(embed=initial_embed, view=view, ephemeral=True)
 

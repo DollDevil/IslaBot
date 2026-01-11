@@ -155,6 +155,65 @@ async def increment_gambling_win(user_id, guild_id=None, guild=None):
     current = row["total_wins"] if row else 0
     await upsert_user_profile(gid, int(user_id), total_wins=current + 1)
 
+# ===== GAMBLING POLICY HELPERS (V3-STYLE) =====
+
+async def get_user_economy(guild_id, user_id):
+    """Get user economy stats (bal, lce, debt)"""
+    from core.config import LCE_RANK_THRESHOLDS, RANK_MAX_BET
+    
+    gid = int(guild_id) if guild_id else 0
+    uid = int(user_id)
+    
+    # Get balance and LCE
+    balance_row = await fetchone(
+        "SELECT coins_balance, coins_lifetime_earned FROM economy_balance WHERE guild_id = ? AND user_id = ?",
+        (gid, uid)
+    )
+    bal = balance_row["coins_balance"] if balance_row else 0
+    lce = balance_row["coins_lifetime_earned"] if balance_row else 0
+    
+    # Get debt
+    debt_row = await fetchone(
+        "SELECT debt FROM discipline_state WHERE guild_id = ? AND user_id = ?",
+        (gid, uid)
+    )
+    debt = debt_row["debt"] if debt_row else 0
+    
+    # Compute rank from LCE
+    rank = "Stray"
+    for threshold, rank_name in sorted(LCE_RANK_THRESHOLDS.items(), reverse=True):
+        if lce >= threshold:
+            rank = rank_name
+            break
+    
+    # Get rank bet cap
+    rank_cap = RANK_MAX_BET.get(rank, 500)
+    
+    return {
+        "bal": bal,
+        "lce": lce,
+        "debt": debt,
+        "rank": rank,
+        "rank_cap": rank_cap,
+    }
+
+async def take_bet(guild_id, user_id, bet):
+    """Deduct bet from balance"""
+    gid = int(guild_id) if guild_id else 0
+    uid = int(user_id)
+    await upsert_economy_balance(gid, uid, -bet)
+
+async def payout_winnings(guild_id, user_id, amount):
+    """Add winnings to balance AND lifetime earned (V3 invariant)"""
+    gid = int(guild_id) if guild_id else 0
+    uid = int(user_id)
+    
+    # Increase balance
+    await upsert_economy_balance(gid, uid, amount)
+    
+    # CRITICAL: Also increase lifetime earned for winnings (V3 rule)
+    # This is handled by upsert_economy_balance when coins_delta > 0
+
 async def get_activity_quote(user_id, guild=None):
     """Get activity quote based on user stats with priority order"""
     guild_id = guild.id if guild else 0
@@ -249,14 +308,46 @@ async def get_lce(guild_id: int, user_id: int) -> int:
     return row["coins_lifetime_earned"] if row else 0
 
 async def get_rank(guild_id: int, user_id: int) -> dict:
-    """Get rank information: coin_rank, eligible_rank, final_rank, readiness_pct, blocker"""
-    from systems.progression import compute_final_rank, compute_readiness_pct, compute_blocker
+    """Get rank information: coin_rank, eligible_rank, held_rank (from cache), readiness_pct, blocker"""
+    from systems.progression import RANK_LADDER, compute_readiness_pct, compute_blocker
     
+    # Get rank from cache (includes held_rank_idx)
+    cache_row = await fetchone(
+        """SELECT coin_rank, eligible_rank, final_rank, held_rank_idx, at_risk, at_risk_since,
+                  readiness_pct, blocker_text FROM rank_cache 
+           WHERE guild_id = ? AND user_id = ?""",
+        (guild_id, user_id)
+    )
+    
+    if cache_row:
+        # Use cached data
+        rank_names = [r["name"] for r in RANK_LADDER]
+        held_rank_idx = cache_row.get("held_rank_idx") or 0
+        held_rank = rank_names[held_rank_idx] if held_rank_idx < len(rank_names) else rank_names[0]
+        
+        # Find next rank
+        next_idx = min(held_rank_idx + 1, len(rank_names) - 1)
+        next_rank = rank_names[next_idx] if next_idx > held_rank_idx else held_rank
+        
+        return {
+            "coin_rank": cache_row["coin_rank"],
+            "eligible_rank": cache_row["eligible_rank"],
+            "final_rank": cache_row["final_rank"],
+            "held_rank": held_rank,
+            "held_rank_idx": held_rank_idx,
+            "at_risk": cache_row.get("at_risk", 0),
+            "rank": held_rank,  # Display held_rank as the user's current rank
+            "rank_prefix": held_rank,  # Prefix for formatting
+            "next_rank": next_rank,
+            "readiness_pct": cache_row.get("readiness_pct", 0) or 0,
+            "blocker_text": cache_row.get("blocker_text", "🔓 Ready") or "🔓 Ready"
+        }
+    
+    # Cache miss - compute and return (shouldn't happen often, but handle gracefully)
+    from systems.progression import compute_final_rank
     lce = await get_lce(guild_id, user_id)
     rank_info = await compute_final_rank(guild_id, user_id, lce)
     
-    # Find next rank
-    from systems.progression import RANK_LADDER
     rank_names = [r["name"] for r in RANK_LADDER]
     current_idx = rank_names.index(rank_info["final_rank"]) if rank_info["final_rank"] in rank_names else 0
     next_idx = min(current_idx + 1, len(rank_names) - 1)
@@ -269,10 +360,14 @@ async def get_rank(guild_id: int, user_id: int) -> dict:
         "coin_rank": rank_info["coin_rank"],
         "eligible_rank": rank_info["eligible_rank"],
         "final_rank": rank_info["final_rank"],
+        "held_rank": rank_info["final_rank"],  # Fallback to final_rank
+        "held_rank_idx": current_idx,
+        "at_risk": 0,
+        "rank": rank_info["final_rank"],
+        "rank_prefix": rank_info["final_rank"],
         "next_rank": next_rank,
         "readiness_pct": readiness_pct,
-        "blocker_text": blocker_text,
-        "lce": lce
+        "blocker_text": blocker_text
     }
 
 async def get_obedience_14d(guild_id: int, user_id: int) -> dict:
@@ -536,6 +631,7 @@ async def order_complete(guild_id: int, user_id: int, run_id: int, late: bool = 
     # Record outcome in order_outcomes_daily
     from core.db import _today_str
     today = _today_str()
+    outcome_type = "late" if is_late else "completed"
     if is_late:
         await execute(
             """INSERT INTO order_outcomes_daily (guild_id, user_id, day, late_count)
@@ -551,7 +647,17 @@ async def order_complete(guild_id: int, user_id: int, run_id: int, late: bool = 
             (guild_id, user_id, today)
         )
     
-    return True
+    # Update order streak and check for bonus
+    from core.db import update_order_streak
+    new_streak, bonus_awarded = await update_order_streak(guild_id, user_id, outcome_type)
+    
+    # Award streak bonus if applicable
+    bonus_amount = 0
+    if bonus_awarded:
+        bonus_amount = 25
+        await add_coins(user_id, bonus_amount, guild_id=guild_id, reason="order_streak_bonus", meta={"run_id": run_id, "streak_reached": 3})
+    
+    return {"success": True, "bonus_awarded": bonus_awarded, "streak_bonus": bonus_amount}
 
 async def order_fail(guild_id: int, user_id: int, run_id: int):
     """Mark an order run as failed and record outcome"""
@@ -569,6 +675,10 @@ async def order_fail(guild_id: int, user_id: int, run_id: int):
            ON CONFLICT(guild_id, user_id, day) DO UPDATE SET failed_count = failed_count + 1""",
         (guild_id, user_id, today)
     )
+    
+    # Update order streak (reset on failure)
+    from core.db import update_order_streak
+    await update_order_streak(guild_id, user_id, "failed")
     
     return True
 
@@ -602,6 +712,131 @@ async def update_debt(guild_id: int, user_id: int, debt_delta: int):
         (guild_id, user_id, new_debt, now)
     )
     return new_debt
+
+# Bank API - Unified economy functions
+async def get_account(guild_id: int, user_id: int) -> dict:
+    """
+    Get user's bank account information.
+    Returns: {bal, lce, tax_paid_total, debt, loan_active, loan_principal, loan_issued_ts, loan_due_ts}
+    """
+    # Get balance and LCE
+    balance_row = await fetchone(
+        "SELECT coins_balance, coins_lifetime_earned FROM economy_balance WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id)
+    )
+    bal = balance_row["coins_balance"] if balance_row else 0
+    lce = balance_row["coins_lifetime_earned"] if balance_row else 0
+    
+    # Get debt
+    debt_row = await fetchone(
+        "SELECT debt FROM discipline_state WHERE guild_id = ? AND user_id = ?",
+        (guild_id, user_id)
+    )
+    debt = debt_row["debt"] if debt_row else 0
+    
+    # Get loan status
+    from core.db import get_loan_status
+    loan = await get_loan_status(guild_id, user_id)
+    loan_active = 1 if loan else 0
+    loan_principal = loan["remaining_principal"] if loan else 0
+    loan_issued_ts = loan["issued_at"] if loan else None
+    loan_due_ts = loan["due_at"] if loan else None
+    
+    # Get tax_paid_total (sum of tax entries from ledger)
+    tax_row = await fetchone(
+        """SELECT SUM(amount) as total FROM economy_ledger 
+           WHERE guild_id = ? AND user_id = ? AND type LIKE '%tax%'""",
+        (guild_id, user_id)
+    )
+    tax_paid_total = abs(tax_row["total"]) if tax_row and tax_row["total"] else 0
+    
+    return {
+        "bal": bal,
+        "lce": lce,
+        "tax_paid_total": tax_paid_total,
+        "debt": debt,
+        "loan_active": loan_active,
+        "loan_principal": loan_principal,
+        "loan_issued_ts": loan_issued_ts,
+        "loan_due_ts": loan_due_ts
+    }
+
+async def deposit_earned(guild_id: int, user_id: int, amount: int, reason: str = "earned", meta: dict = None):
+    """Deposit earned coins (adds to balance and LCE, logs to ledger)"""
+    await add_coins(user_id, amount, guild_id=guild_id, reason=reason, meta=meta)
+
+async def withdraw(guild_id: int, user_id: int, amount: int, reason: str = "withdrawal", meta: dict = None):
+    """Withdraw coins (subtracts from balance, logs to ledger)"""
+    await add_coins(user_id, -amount, guild_id=guild_id, reason=reason, meta=meta)
+
+async def transfer(guild_id: int, from_user_id: int, to_user_id: int, amount: int, reason: str = "transfer", meta: dict = None):
+    """Transfer coins between users"""
+    # Withdraw from sender
+    await withdraw(guild_id, from_user_id, amount, reason=f"{reason}_from", meta=meta)
+    # Deposit to receiver
+    await deposit_earned(guild_id, to_user_id, amount, reason=f"{reason}_to", meta=meta)
+
+async def apply_tax(guild_id: int, user_id: int, tax_amount: int, reason: str = "tax"):
+    """Apply tax (subtracts from balance, logs to ledger with tax type)"""
+    await add_coins(user_id, -tax_amount, guild_id=guild_id, reason=reason, meta={"tax_amount": tax_amount})
+
+async def pay_debt(guild_id: int, user_id: int, amount: int):
+    """Pay off debt (subtracts from balance and debt, logs to ledger)"""
+    # Check if user has enough balance
+    current_balance = await get_coins(user_id, guild_id=guild_id)
+    if current_balance < amount:
+        return False
+    
+    # Withdraw from balance
+    await withdraw(guild_id, user_id, amount, reason="debt_payment", meta={"debt_payment": amount})
+    
+    # Reduce debt
+    await update_debt(guild_id, user_id, -amount)
+    
+    return True
+
+async def add_debt(guild_id: int, user_id: int, amount: int, reason: str = "debt"):
+    """Add to debt (logs to ledger)"""
+    new_debt = await update_debt(guild_id, user_id, amount)
+    
+    # Log to ledger
+    now = _now_iso()
+    await execute(
+        "INSERT INTO economy_ledger (guild_id, user_id, ts, type, amount, meta_json) VALUES (?, ?, ?, ?, ?, ?)",
+        (guild_id, user_id, now, reason, amount, json.dumps({"debt_after": new_debt}))
+    )
+    
+    return new_debt
+
+# Loan API functions (wrappers around db functions)
+async def issue_loan(guild_id: int, user_id: int, principal: int, due_at: str):
+    """Issue a new loan to a user"""
+    from core.db import issue_loan as _issue_loan
+    await _issue_loan(guild_id, user_id, principal, due_at)
+
+async def pay_loan(guild_id: int, user_id: int, amount: int):
+    """Pay off part of a loan (subtracts from balance and loan, logs to ledger)"""
+    from core.db import pay_loan as _pay_loan, get_loan_status
+    
+    # Check if user has enough balance
+    current_balance = await get_coins(user_id, guild_id=guild_id)
+    if current_balance < amount:
+        return False
+    
+    # Pay the loan
+    success = await _pay_loan(guild_id, user_id, amount)
+    if not success:
+        return False
+    
+    # Withdraw from balance
+    await withdraw(guild_id, user_id, amount, reason="loan_payment", meta={"loan_payment": amount})
+    
+    return True
+
+async def convert_overdue_loans():
+    """Convert overdue loans to debt (called from scheduled tasks)"""
+    from core.db import convert_overdue_loans as _convert_overdue_loans
+    return await _convert_overdue_loans()
 
 # Activity recording functions (wrappers for clarity)
 async def record_message(guild_id: int, user_id: int):
