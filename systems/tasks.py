@@ -511,7 +511,6 @@ async def _evaluate_soft_demotion(guild_id: int, user_id: int):
                 )
 
 
-@tasks.loop(minutes=1)
 @tasks.loop(hours=1)
 async def promo_rotation_scheduler():
     """4-day rotation scheduler for Throne and Coffee announcements"""
