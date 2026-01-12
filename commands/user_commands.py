@@ -939,8 +939,9 @@ def register_commands(bot_instance):
         else:
             await interaction.response.send_message(embed=embed, delete_after=15)
     
-    @bot.tree.command(name="rank", description="View your personal rank progress")
-    async def rank(interaction: discord.Interaction):
+    # Make /rank a subcommand instead of standalone to avoid CommandAlreadyRegistered
+    @rank_group.command(name="view", description="View your personal rank progress")
+    async def rank_view(interaction: discord.Interaction):
         """View personal rank progress - shows only invoker (D1)"""
         if not await check_user_command_permissions(interaction):
             return

@@ -108,6 +108,13 @@ async def on_member_join(member):
     await handlers.on_member_join(member)
 
 @bot.event
+async def on_connect():
+    """Called when bot connects to Discord (before on_ready) - initialize database here"""
+    from core.data import initialize_database
+    await initialize_database()
+    print("[+] Database initialized in on_connect")
+
+@bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
@@ -145,9 +152,9 @@ async def on_ready():
     
     print(f'Bot is now in {len([g for g in bot.guilds if g.id in ALLOWED_GUILDS])} allowed guild(s)')
     
-    # Initialize database and import JSON if exists
+    # Database already initialized in setup_hook, but verify it's ready
     from core.data import initialize_database
-    await initialize_database()
+    await initialize_database()  # This is idempotent (checks _db_initialized flag)
     
     # Initialize event scheduler with UK timezone
     uk_tz = get_timezone("Europe/London")
