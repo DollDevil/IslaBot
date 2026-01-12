@@ -375,12 +375,771 @@ def register_commands(bot_instance):
     
     # /askgifts command deleted per D5
     
-    # Onboarding configuration group
-    configure_group = app_commands.Group(name="configure", description="Configure bot settings. Admin only.")
+    # Main configure command - interactive menu system
+    @bot.tree.command(name="configure", description="Configure bot settings with interactive menu. Admin only.")
+    async def configure(interaction: discord.Interaction):
+        """Main configure command with interactive menu"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="⚙️ Configuration Menu",
+            description="Select a category to configure:",
+            color=0x4ec200
+        )
+        
+        view = ConfigureCategoryView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
-    onboarding_group = app_commands.Group(name="onboarding", parent=configure_group, description="Configure onboarding system")
+    class ConfigureCategoryView(discord.ui.View):
+        """Main category selection view"""
+        def __init__(self):
+            super().__init__(timeout=300)
+        
+        @discord.ui.select(
+            placeholder="Select a configuration category...",
+            options=[
+                discord.SelectOption(label="📝 Onboarding", value="onboarding", description="Configure onboarding channel and roles"),
+                discord.SelectOption(label="🎭 Roles", value="roles", description="Configure role selection messages"),
+                discord.SelectOption(label="👋 Introductions", value="introductions", description="Configure introductions channel"),
+                discord.SelectOption(label="🎰 Casino", value="casino", description="Configure casino channel"),
+                discord.SelectOption(label="📢 Announcements", value="announcements", description="Configure announcements channel"),
+                discord.SelectOption(label="📋 Logs", value="logs", description="Configure logs channel (admin commands)"),
+                discord.SelectOption(label="💬 User Commands", value="usercommands", description="Configure user commands channels"),
+                discord.SelectOption(label="📦 Orders", value="orders", description="Configure orders system"),
+            ]
+        )
+        async def category_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            category = select.values[0]
+            
+            if category == "onboarding":
+                embed = discord.Embed(
+                    title="📝 Onboarding Configuration",
+                    description="Select what to configure:",
+                    color=0x4ec200
+                )
+                view = OnboardingConfigView()
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "roles":
+                embed = discord.Embed(
+                    title="🎭 Roles Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = RolesConfigView()
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "introductions":
+                embed = discord.Embed(
+                    title="👋 Introductions Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = ChannelConfigView("introductions", "Introductions channel")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "casino":
+                embed = discord.Embed(
+                    title="🎰 Casino Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = ChannelConfigView("casino", "Casino channel")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "announcements":
+                embed = discord.Embed(
+                    title="📢 Announcements Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = ChannelConfigView("announcements", "Announcements channel")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "logs":
+                embed = discord.Embed(
+                    title="📋 Logs Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = ChannelConfigView("logs", "Logs channel (admin commands)")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "usercommands":
+                embed = discord.Embed(
+                    title="💬 User Commands Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = UserCommandsConfigView()
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            
+            elif category == "orders":
+                embed = discord.Embed(
+                    title="📦 Orders Configuration",
+                    description="Select an action:",
+                    color=0x4ec200
+                )
+                view = OrdersConfigView()
+                await select_interaction.response.edit_message(embed=embed, view=view)
     
-    @onboarding_group.command(name="type", description="Configure onboarding channel or roles")
+    class OnboardingConfigView(discord.ui.View):
+        """Onboarding configuration view"""
+        def __init__(self):
+            super().__init__(timeout=300)
+        
+        @discord.ui.select(
+            placeholder="Select what to configure...",
+            options=[
+                discord.SelectOption(label="📝 Channel", value="channel", description="Set onboarding channel"),
+                discord.SelectOption(label="🔐 Unverified Role", value="unverified", description="Set Unverified role"),
+                discord.SelectOption(label="✅ Verified Role", value="verified", description="Set Verified role"),
+                discord.SelectOption(label="🐾 Bad Pup Role", value="badpup", description="Set Bad Pup role"),
+            ]
+        )
+        async def onboarding_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            action = select.values[0]
+            
+            if action == "channel":
+                embed = discord.Embed(
+                    title="📝 Set Onboarding Channel",
+                    description="Select the channel to use for onboarding:",
+                    color=0x4ec200
+                )
+                view = ChannelSelectView("onboarding_channel", "onboarding")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            else:
+                role_name_map = {
+                    "unverified": "Unverified",
+                    "verified": "Verified",
+                    "badpup": "Bad Pup"
+                }
+                role_name = role_name_map[action]
+                embed = discord.Embed(
+                    title=f"🔐 Set {role_name} Role",
+                    description=f"Select the role to use for {role_name}:",
+                    color=0x4ec200
+                )
+                view = RoleSelectView("onboarding_role", role_name)
+                await select_interaction.response.edit_message(embed=embed, view=view)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class RolesConfigView(discord.ui.View):
+        """Roles configuration view"""
+        def __init__(self):
+            super().__init__(timeout=300)
+        
+        @discord.ui.select(
+            placeholder="Select a role message type...",
+            options=[
+                discord.SelectOption(label="Pronouns", value="pronouns", description="Configure pronouns selection message"),
+                discord.SelectOption(label="Petnames", value="petnames", description="Configure petnames selection message"),
+                discord.SelectOption(label="Region", value="region", description="Configure region selection message"),
+                discord.SelectOption(label="Preferences", value="preferences", description="Configure preferences selection message"),
+            ]
+        )
+        async def role_type_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            message_type = select.values[0]
+            embed = discord.Embed(
+                title=f"🎭 Configure {message_type.capitalize()} Role Message",
+                description="Select an action:",
+                color=0x4ec200
+            )
+            view = RoleMessageActionView(message_type)
+            await select_interaction.response.edit_message(embed=embed, view=view)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class ChannelConfigView(discord.ui.View):
+        """Generic channel configuration view"""
+        def __init__(self, config_type: str, display_name: str):
+            super().__init__(timeout=300)
+            self.config_type = config_type
+            self.display_name = display_name
+        
+        @discord.ui.select(
+            placeholder="Select an action...",
+            options=[
+                discord.SelectOption(label="Set Channel", value="set", description=f"Set {display_name.lower()}"),
+                discord.SelectOption(label="Show Current", value="show", description="Show current configuration"),
+            ]
+        )
+        async def action_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            action = select.values[0]
+            
+            if action == "set":
+                embed = discord.Embed(
+                    title=f"⚙️ Set {self.display_name}",
+                    description=f"Select the channel to use for {self.display_name.lower()}:",
+                    color=0x4ec200
+                )
+                view = ChannelSelectView(f"{self.config_type}_channel", self.config_type)
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            else:  # show
+                await select_interaction.response.defer(ephemeral=True)
+                await self.show_config(select_interaction)
+        
+        async def show_config(self, interaction: discord.Interaction):
+            """Show current configuration"""
+            from core.db import get_casino_channel_id, get_announcements_channel_id, get_logs_channel_id, get_usercommands_channel_ids, fetchone
+            from core.config import CASINO_CHANNEL_ID, EVENT_CHANNEL_ID, ADMIN_COMMAND_CHANNEL_ID, USER_COMMAND_CHANNEL_ID
+            
+            channel_id = None
+            default_id = None
+            
+            if self.config_type == "casino":
+                channel_id = await get_casino_channel_id(interaction.guild.id)
+                default_id = CASINO_CHANNEL_ID
+            elif self.config_type == "announcements":
+                channel_id = await get_announcements_channel_id(interaction.guild.id)
+                default_id = EVENT_CHANNEL_ID
+            elif self.config_type == "logs":
+                channel_id = await get_logs_channel_id(interaction.guild.id)
+                default_id = ADMIN_COMMAND_CHANNEL_ID
+            elif self.config_type == "introductions":
+                row = await fetchone(
+                    "SELECT channel_id FROM introductions_config WHERE guild_id = ?",
+                    (interaction.guild.id,)
+                )
+                channel_id = row["channel_id"] if row else None
+            
+            channel = bot.get_channel(channel_id) if channel_id else None
+            
+            if channel:
+                embed = discord.Embed(
+                    title=f"📋 {self.display_name} Configuration",
+                    description=f"Current channel: {channel.mention}",
+                    color=0x4ec200
+                )
+            else:
+                if default_id:
+                    default_channel = bot.get_channel(default_id)
+                    embed = discord.Embed(
+                        title=f"📋 {self.display_name} Configuration",
+                        description=f"No custom channel configured.\nUsing default: {default_channel.mention if default_channel else f'<#{default_id}>'}",
+                        color=0xff000d
+                    )
+                else:
+                    embed = discord.Embed(
+                        title=f"📋 {self.display_name} Configuration",
+                        description="No channel configured.",
+                        color=0xff000d
+                    )
+            
+            view = ChannelConfigView(self.config_type, self.display_name)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class UserCommandsConfigView(discord.ui.View):
+        """User commands configuration view"""
+        def __init__(self):
+            super().__init__(timeout=300)
+        
+        @discord.ui.select(
+            placeholder="Select an action...",
+            options=[
+                discord.SelectOption(label="Set Channels", value="set", description="Set user commands channels"),
+                discord.SelectOption(label="Show Current", value="show", description="Show current channels"),
+            ]
+        )
+        async def action_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            action = select.values[0]
+            
+            if action == "set":
+                embed = discord.Embed(
+                    title="💬 Set User Commands Channels",
+                    description="**Note:** This will replace all current channels.\n\nPlease type the channel mentions or IDs (comma-separated) in a message, then click the button below.",
+                    color=0x4ec200
+                )
+                view = UserCommandsSetView()
+                await select_interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                await select_interaction.delete_original_response()
+            else:  # show
+                await select_interaction.response.defer(ephemeral=True)
+                from core.db import get_usercommands_channel_ids
+                from core.config import USER_COMMAND_CHANNEL_ID
+                
+                channel_ids = await get_usercommands_channel_ids(select_interaction.guild.id)
+                channel_mentions = []
+                for channel_id in channel_ids:
+                    channel = bot.get_channel(channel_id) or select_interaction.guild.get_channel(channel_id)
+                    if channel:
+                        channel_mentions.append(channel.mention)
+                    else:
+                        channel_mentions.append(f"<#{channel_id}> (not found)")
+                
+                if channel_mentions:
+                    embed = discord.Embed(
+                        title="📋 User Commands Configuration",
+                        description=f"Current channels: {' '.join(channel_mentions)}",
+                        color=0x4ec200
+                    )
+                else:
+                    default_channel = bot.get_channel(USER_COMMAND_CHANNEL_ID)
+                    embed = discord.Embed(
+                        title="📋 User Commands Configuration",
+                        description=f"Using default: {default_channel.mention if default_channel else f'<#{USER_COMMAND_CHANNEL_ID}>'}",
+                        color=0xff000d
+                    )
+                
+                view = UserCommandsConfigView()
+                await select_interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class UserCommandsSetView(discord.ui.View):
+        """View for setting user commands channels via modal"""
+        @discord.ui.button(label="Open Channel Input", style=discord.ButtonStyle.primary)
+        async def open_modal_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            modal = UserCommandsChannelModal()
+            await interaction.response.send_modal(modal)
+    
+    class UserCommandsChannelModal(discord.ui.Modal, title="Set User Commands Channels"):
+        """Modal for entering channel IDs/mentions"""
+        channels_input = discord.ui.TextInput(
+            label="Channel Mentions or IDs",
+            placeholder="<#123456789>, <#987654321> or 123456789, 987654321",
+            required=True,
+            max_length=500
+        )
+        
+        async def on_submit(self, interaction: discord.Interaction):
+            await interaction.response.defer(ephemeral=True)
+            
+            # Parse channel mentions/IDs
+            channels_text = self.channels_input.value
+            channel_ids = []
+            parts = [p.strip() for p in channels_text.split(",")]
+            
+            for part in parts:
+                # Try to extract channel ID from mention (<#123456789>)
+                if part.startswith("<#") and part.endswith(">"):
+                    try:
+                        channel_id = int(part[2:-1])
+                        channel_ids.append(channel_id)
+                    except ValueError:
+                        pass
+                else:
+                    # Try as direct ID
+                    try:
+                        channel_id = int(part)
+                        channel_ids.append(channel_id)
+                    except ValueError:
+                        pass
+            
+            if not channel_ids:
+                await interaction.followup.send("No valid channel IDs found. Please provide channel mentions or IDs (comma-separated).", ephemeral=True)
+                return
+            
+            from core.db import execute, _now_iso
+            now = _now_iso()
+            guild_id = interaction.guild.id
+            
+            # Remove existing channels for this guild
+            await execute(
+                "DELETE FROM usercommands_channel_config WHERE guild_id = ?",
+                (guild_id,)
+            )
+            
+            # Add new channels
+            for channel_id in channel_ids:
+                channel = bot.get_channel(channel_id) or interaction.guild.get_channel(channel_id)
+                if channel:
+                    await execute(
+                        """INSERT INTO usercommands_channel_config (guild_id, channel_id, updated_at)
+                           VALUES (?, ?, ?)""",
+                        (guild_id, channel_id, now)
+                    )
+            
+            channel_mentions = " ".join(f"<#{cid}>" for cid in channel_ids if bot.get_channel(cid) or interaction.guild.get_channel(cid))
+            embed = discord.Embed(
+                title="✅ Configuration Updated",
+                description=f"Usercommands channels set to: {channel_mentions}",
+                color=0x4ec200
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    class OrdersConfigView(discord.ui.View):
+        """Orders configuration view"""
+        def __init__(self):
+            super().__init__(timeout=300)
+        
+        @discord.ui.select(
+            placeholder="Select an action...",
+            options=[
+                discord.SelectOption(label="Announcements Channel", value="announcements", description="Set channel for new orders announcements"),
+            ]
+        )
+        async def action_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            action = select.values[0]
+            
+            if action == "announcements":
+                embed = discord.Embed(
+                    title="📦 Set Orders Announcements Channel",
+                    description="Select the channel to use for new orders announcements:",
+                    color=0x4ec200
+                )
+                view = ChannelSelectView("orders_announcements", "orders")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class ChannelSelectView(discord.ui.View):
+        """Channel selector view"""
+        def __init__(self, action_type: str, config_category: str):
+            super().__init__(timeout=300)
+            self.action_type = action_type
+            self.config_category = config_category
+        
+        @discord.ui.channel_select(
+            placeholder="Select a channel...",
+            channel_types=[discord.ChannelType.text]
+        )
+        async def channel_select(self, select_interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+            channel = select.values[0]
+            await select_interaction.response.defer(ephemeral=True)
+            
+            if self.action_type == "onboarding_channel":
+                from systems.onboarding import set_onboarding_channel
+                set_onboarding_channel(channel.id)
+                embed = discord.Embed(
+                    title="✅ Configuration Updated",
+                    description=f"Onboarding channel set to {channel.mention}",
+                    color=0x4ec200
+                )
+            
+            elif self.config_category == "casino":
+                from core.db import execute, _now_iso
+                now = _now_iso()
+                await execute(
+                    """INSERT OR REPLACE INTO casino_channel_config (guild_id, channel_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (select_interaction.guild.id, channel.id, now)
+                )
+                embed = discord.Embed(
+                    title="✅ Configuration Updated",
+                    description=f"Casino channel set to {channel.mention}",
+                    color=0x4ec200
+                )
+            
+            elif self.config_category == "announcements":
+                from core.db import execute, _now_iso
+                now = _now_iso()
+                await execute(
+                    """INSERT OR REPLACE INTO announcements_channel_config (guild_id, channel_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (select_interaction.guild.id, channel.id, now)
+                )
+                embed = discord.Embed(
+                    title="✅ Configuration Updated",
+                    description=f"Announcements channel set to {channel.mention}",
+                    color=0x4ec200
+                )
+            
+            elif self.config_category == "logs":
+                from core.db import execute, _now_iso
+                now = _now_iso()
+                await execute(
+                    """INSERT OR REPLACE INTO logs_channel_config (guild_id, channel_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (select_interaction.guild.id, channel.id, now)
+                )
+                embed = discord.Embed(
+                    title="✅ Configuration Updated",
+                    description=f"Logs channel set to {channel.mention}\n\nAdmin commands can now only be used in this channel.",
+                    color=0x4ec200
+                )
+            
+            elif self.config_category == "introductions":
+                from core.db import execute
+                now = datetime.datetime.now(datetime.UTC).isoformat()
+                await execute(
+                    """INSERT OR REPLACE INTO introductions_config (guild_id, channel_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (select_interaction.guild.id, channel.id, now)
+                )
+                embed = discord.Embed(
+                    title="✅ Configuration Updated",
+                    description=f"Introductions channel set to {channel.mention}",
+                    color=0x4ec200
+                )
+            
+            elif self.action_type == "orders_announcements":
+                from core.db import execute
+                now = datetime.datetime.now(datetime.UTC).isoformat()
+                await execute(
+                    """INSERT OR REPLACE INTO orders_announcement_config (guild_id, channel_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (select_interaction.guild.id, channel.id, now)
+                )
+                embed = discord.Embed(
+                    title="✅ Configuration Updated",
+                    description=f"Orders announcements channel set to {channel.mention}",
+                    color=0x4ec200
+                )
+            
+            else:
+                embed = discord.Embed(
+                    title="❌ Error",
+                    description="Unknown configuration type.",
+                    color=0xff000d
+                )
+            
+            await select_interaction.followup.send(embed=embed, ephemeral=True)
+            
+            # Return to main menu
+            main_embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await select_interaction.followup.send(embed=main_embed, view=view, ephemeral=True)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class RoleSelectView(discord.ui.View):
+        """Role selector view"""
+        def __init__(self, action_type: str, role_name: str):
+            super().__init__(timeout=300)
+            self.action_type = action_type
+            self.role_name = role_name
+        
+        @discord.ui.role_select(
+            placeholder="Select a role..."
+        )
+        async def role_select(self, select_interaction: discord.Interaction, select: discord.ui.RoleSelect):
+            role = select.values[0]
+            await select_interaction.response.defer(ephemeral=True)
+            
+            from systems.onboarding import set_role
+            set_role(self.role_name, role.id)
+            
+            embed = discord.Embed(
+                title="✅ Configuration Updated",
+                description=f"Onboarding role '{self.role_name}' set to {role.mention}",
+                color=0x4ec200
+            )
+            await select_interaction.followup.send(embed=embed, ephemeral=True)
+            
+            # Return to main menu
+            main_embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await select_interaction.followup.send(embed=main_embed, view=view, ephemeral=True)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class RoleMessageActionView(discord.ui.View):
+        """View for role message actions (send/update)"""
+        def __init__(self, message_type: str):
+            super().__init__(timeout=300)
+            self.message_type = message_type
+        
+        @discord.ui.select(
+            placeholder="Select an action...",
+            options=[
+                discord.SelectOption(label="Send New Message", value="send", description="Send a new role selection message"),
+                discord.SelectOption(label="Update Existing", value="update", description="Update existing role message"),
+            ]
+        )
+        async def action_select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+            action = select.values[0]
+            
+            if action == "send":
+                embed = discord.Embed(
+                    title=f"🎭 Send {self.message_type.capitalize()} Role Message",
+                    description="Select the channel to send the message to:",
+                    color=0x4ec200
+                )
+                view = RoleMessageChannelView(self.message_type, "send")
+                await select_interaction.response.edit_message(embed=embed, view=view)
+            else:  # update
+                await select_interaction.response.defer(ephemeral=True)
+                # Check if message exists
+                from core.db import fetchone
+                # Get roles config - function is defined in this module
+                config = await get_roles_config(select_interaction.guild.id, self.message_type)
+                if not config:
+                    await select_interaction.followup.send(f"❌ No {self.message_type} role message found. Please send one first.", ephemeral=True)
+                    return
+                
+                # Fetch and update existing message
+                try:
+                    channel = bot.get_channel(config["channel_id"])
+                    if not channel:
+                        await select_interaction.followup.send(f"❌ Channel not found. Message may have been deleted.", ephemeral=True)
+                        return
+                    
+                    existing_msg = await channel.fetch_message(config["message_id"])
+                    
+                    # Build embed and view
+                    embed_builder = {
+                        "pronouns": build_pronouns_embed,
+                        "petnames": build_petnames_embed,
+                        "region": build_region_embed,
+                        "preferences": build_preferences_embed,
+                    }
+                    view_builder = {
+                        "pronouns": PronounsSelectView,
+                        "petnames": PetnamesSelectView,
+                        "region": RegionSelectView,
+                        "preferences": PreferencesSelectView,
+                    }
+                    
+                    embed = embed_builder[self.message_type]()
+                    view = view_builder[self.message_type]()
+                    
+                    await existing_msg.edit(embed=embed, view=view)
+                    await save_roles_config(select_interaction.guild.id, self.message_type, config["channel_id"], config["message_id"])
+                    await select_interaction.followup.send(f"✅ Roles message for {self.message_type} has been updated.", ephemeral=True)
+                except discord.NotFound:
+                    await select_interaction.followup.send(f"❌ Message not found. It may have been deleted. Use Send New Message to create a new one.", ephemeral=True)
+                except Exception as e:
+                    await select_interaction.followup.send(f"❌ Failed to edit message: {e}", ephemeral=True)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title="🎭 Roles Configuration",
+                description="Select a role message type:",
+                color=0x4ec200
+            )
+            view = RolesConfigView()
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    class RoleMessageChannelView(discord.ui.View):
+        """View for selecting channel for role message"""
+        def __init__(self, message_type: str, action: str):
+            super().__init__(timeout=300)
+            self.message_type = message_type
+            self.action = action
+        
+        @discord.ui.channel_select(
+            placeholder="Select a channel...",
+            channel_types=[discord.ChannelType.text]
+        )
+        async def channel_select(self, select_interaction: discord.Interaction, select: discord.ui.ChannelSelect):
+            channel = select.values[0]
+            await select_interaction.response.defer(ephemeral=True)
+            
+            # Build embed and view
+            embed_builder = {
+                "pronouns": build_pronouns_embed,
+                "petnames": build_petnames_embed,
+                "region": build_region_embed,
+                "preferences": build_preferences_embed,
+            }
+            view_builder = {
+                "pronouns": PronounsSelectView,
+                "petnames": PetnamesSelectView,
+                "region": RegionSelectView,
+                "preferences": PreferencesSelectView,
+            }
+            
+            embed = embed_builder[self.message_type]()
+            view = view_builder[self.message_type]()
+            
+            message = await channel.send(embed=embed, view=view)
+            # Save roles config - function is defined in this module
+            await save_roles_config(select_interaction.guild.id, self.message_type, channel.id, message.id)
+            
+            result_embed = discord.Embed(
+                title="✅ Message Sent",
+                description=f"Role selection message for {self.message_type} sent to {channel.mention}",
+                color=0x4ec200
+            )
+            await select_interaction.followup.send(embed=result_embed, ephemeral=True)
+            
+            # Return to main menu
+            main_embed = discord.Embed(
+                title="⚙️ Configuration Menu",
+                description="Select a category to configure:",
+                color=0x4ec200
+            )
+            view = ConfigureCategoryView()
+            await select_interaction.followup.send(embed=main_embed, view=view, ephemeral=True)
+        
+        @discord.ui.button(label="⬅️ Back", style=discord.ButtonStyle.secondary)
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            embed = discord.Embed(
+                title=f"🎭 Configure {self.message_type.capitalize()} Role Message",
+                description="Select an action:",
+                color=0x4ec200
+            )
+            view = RoleMessageActionView(self.message_type)
+            await interaction.response.edit_message(embed=embed, view=view)
+    
+    # Legacy subcommand groups - kept for reference but not registered
+    # Define dummy group so old subcommand definitions don't cause errors
+    _dummy_configure_group = app_commands.Group(name="_dummy_configure", description="[NOT REGISTERED]")
+    configure_group = _dummy_configure_group  # Old subcommands reference this but it's never added to tree
     @app_commands.choices(config_type=[
         app_commands.Choice(name="channel", value="channel"),
         app_commands.Choice(name="role", value="role")
@@ -707,10 +1466,13 @@ def register_commands(bot_instance):
             return {"channel_id": row["channel_id"], "message_id": row["message_id"]}
         return None
     
-    # Roles configuration commands
-    roles_group = app_commands.Group(name="roles", parent=configure_group, description="Configure role selection messages")
+    # Old subcommand groups removed - use /configure interactive menu instead
+    # All old subcommand definitions below are commented out
     
-    @roles_group.command(name="send", description="Send a role selection message to a channel")
+    # configure_group = app_commands.Group(name="configure", description="[DEPRECATED]")
+    # roles_group = app_commands.Group(name="roles", parent=configure_group, description="Configure role selection messages")
+    
+    # @roles_group.command(name="send", description="Send a role selection message to a channel")
     @app_commands.describe(
         message="Type of role message to send",
         channel="Channel to send the message to"
@@ -1348,7 +2110,8 @@ def register_commands(bot_instance):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
-    bot.tree.add_command(configure_group)
+    # Old configure_group not registered - using interactive /configure menu instead
+    # bot.tree.add_command(configure_group)
     
     @bot.tree.command(name="casino_test", description="Test casino embed types. Admin only.")
     @app_commands.describe(embed_type="Type of casino embed to test")
