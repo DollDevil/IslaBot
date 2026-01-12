@@ -1,5 +1,5 @@
 ﻿"""
-User commands for the bot - level, leaderboard, balance, daily, give, gambling, etc.
+User commands for the bot - balance, daily, give, gambling, etc.
 """
 import discord
 from discord import app_commands
@@ -14,10 +14,7 @@ from core.data import (
     get_activity_quote
 )
 from core.utils import get_timezone, USE_PYTZ
-from systems.leaderboards import (
-    build_rank_leaderboard_embed, build_coins_leaderboard_embed,
-    build_activity_leaderboard_embed, LeaderboardView
-)
+# Leaderboard imports removed - /leaderboard and /leaderboards commands deleted
 from systems.gambling import (
     gamble, dice, slots_bet, slots_free, coinflip, allin, roulette, blackjack,
     build_casino_embed
