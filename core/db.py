@@ -363,6 +363,23 @@ async def init_db():
     """)
     
     await _db.execute("""
+        CREATE TABLE IF NOT EXISTS logs_channel_config (
+            guild_id INTEGER PRIMARY KEY,
+            channel_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    
+    await _db.execute("""
+        CREATE TABLE IF NOT EXISTS usercommands_channel_config (
+            guild_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, channel_id)
+        )
+    """)
+    
+    await _db.execute("""
         CREATE TABLE IF NOT EXISTS order_streaks (
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -868,6 +885,26 @@ async def get_casino_channel_id(guild_id: int):
         (guild_id,)
     )
     return row["channel_id"] if row else CASINO_CHANNEL_ID
+
+async def get_logs_channel_id(guild_id: int):
+    """Get logs channel ID for a guild (falls back to ADMIN_COMMAND_CHANNEL_ID if not configured)"""
+    from core.config import ADMIN_COMMAND_CHANNEL_ID
+    row = await fetchone(
+        "SELECT channel_id FROM logs_channel_config WHERE guild_id = ?",
+        (guild_id,)
+    )
+    return row["channel_id"] if row else ADMIN_COMMAND_CHANNEL_ID
+
+async def get_usercommands_channel_ids(guild_id: int):
+    """Get usercommands channel IDs for a guild (returns list, falls back to USER_COMMAND_CHANNEL_ID if not configured)"""
+    from core.config import USER_COMMAND_CHANNEL_ID
+    rows = await fetchall(
+        "SELECT channel_id FROM usercommands_channel_config WHERE guild_id = ?",
+        (guild_id,)
+    )
+    if rows:
+        return [row["channel_id"] for row in rows]
+    return [USER_COMMAND_CHANNEL_ID]
 
 async def cleanup_expired_events():
     """Delete expired event data based on retention windows"""

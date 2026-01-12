@@ -37,17 +37,24 @@ async def check_user_command_permissions(interaction_or_ctx) -> bool:
     if isinstance(interaction_or_ctx, discord.Interaction):
         channel_id = interaction_or_ctx.channel.id
         user = interaction_or_ctx.user
+        guild_id = interaction_or_ctx.guild.id if interaction_or_ctx.guild else 0
         is_interaction = True
     else:
         channel_id = interaction_or_ctx.channel.id
         user = interaction_or_ctx.author
+        guild_id = interaction_or_ctx.guild.id if interaction_or_ctx.guild else 0
         is_interaction = False
     
-    if channel_id != USER_COMMAND_CHANNEL_ID:
+    # Use configured usercommands channels (C1: allow multiple channels)
+    from core.db import get_usercommands_channel_ids
+    allowed_channels = await get_usercommands_channel_ids(guild_id)
+    
+    if channel_id not in allowed_channels:
+        channels_mention = " ".join(f"<#{cid}>" for cid in allowed_channels)
         if is_interaction:
-            await interaction_or_ctx.response.send_message(f"This command can only be used in <#{USER_COMMAND_CHANNEL_ID}>.", ephemeral=True, delete_after=5)
+            await interaction_or_ctx.response.send_message(f"This command can only be used in: {channels_mention}", ephemeral=True, delete_after=5)
         else:
-            await interaction_or_ctx.send(f"This command can only be used in <#{USER_COMMAND_CHANNEL_ID}>.", delete_after=5)
+            await interaction_or_ctx.send(f"This command can only be used in: {channels_mention}", delete_after=5)
         return False
     
     if not isinstance(user, discord.Member):
@@ -75,280 +82,10 @@ def register_commands(bot_instance):
     global bot
     bot = bot_instance
     
-    @bot.tree.command(name="equip", description="Equip a collar or badge")
-    @app_commands.describe(item_type="Type of item to equip (collar or badge)", item_name="Name of the item to equip")
-    async def equip(interaction: discord.Interaction, item_type: str, item_name: str):
-        """Equip a collar or badge."""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        user_id = interaction.user.id
-        uid = str(user_id)
-        item_type_lower = item_type.lower()
-        
-        if uid not in xp_data:
-            xp_data[uid] = {
-                "xp": 0, "level": 1, "coins": 0,
-                "messages_sent": 0, "vc_minutes": 0, "event_participations": 0,
-                "times_gambled": 0, "total_wins": 0,
-                "badges_owned": [], "collars_owned": [], "interfaces_owned": [],
-                "equipped_collar": None, "equipped_badge": None
-            }
-        
-        if item_type_lower == "collar":
-            collars_owned = xp_data[uid].get("collars_owned", [])
-            if item_name not in collars_owned:
-                embed = discord.Embed(
-                    title="Item Not Owned",
-                    description=f"You don't own the collar '{item_name}'.",
-                    color=0xff000d
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            
-            xp_data[uid]["equipped_collar"] = item_name
-            # Updated to use DB - equip is handled by inventory_equipped table
-            from core.db import execute, _now_iso
-            guild_id = interaction.guild.id if interaction.guild else 0
-            await execute(
-                """INSERT OR REPLACE INTO inventory_equipped (guild_id, user_id, equipped_collar, updated_at)
-                   VALUES (?, ?, ?, ?)""",
-                (guild_id, user_id, item_name, _now_iso())
-            )
-            embed = discord.Embed(
-                title="Collar Equipped",
-                description=f"You've equipped the collar '{item_name}'.",
-                color=0xff000d
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        elif item_type_lower == "badge":
-            badges_owned = xp_data[uid].get("badges_owned", [])
-            if item_name not in badges_owned:
-                embed = discord.Embed(
-                    title="Item Not Owned",
-                    description=f"You don't own the badge '{item_name}'.",
-                    color=0xff000d
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            
-            xp_data[uid]["equipped_badge"] = item_name
-            # Updated to use DB - equip is handled by inventory_equipped table
-            from core.db import execute, _now_iso
-            guild_id = interaction.guild.id if interaction.guild else 0
-            await execute(
-                """INSERT OR REPLACE INTO inventory_equipped (guild_id, user_id, equipped_badge, updated_at)
-                   VALUES (?, ?, ?, ?)""",
-                (guild_id, user_id, item_name, _now_iso())
-            )
-            embed = discord.Embed(
-                title="Badge Equipped",
-                description=f"You've equipped the badge '{item_name}'.",
-                color=0xff000d
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        else:
-            embed = discord.Embed(
-                title="Invalid Item Type",
-                description="Item type must be 'collar' or 'badge'.",
-                color=0xff000d
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+    # /equip command deleted per D5
+    # Old /leaderboards and /leaderboard commands deleted per D4
     
-    # Standalone leaderboards command (plural) - shows menu
-    @bot.tree.command(name="leaderboards", description="View available leaderboards")
-    async def leaderboards_menu(interaction: discord.Interaction):
-        """Show leaderboard menu"""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        embed = discord.Embed(
-            title="Leaderboards",
-            description="Which leaderboard would you like to check?\n",
-            color=0x58585f
-        )
-        
-        embed.add_field(
-            name="Rank Leaderboard",
-            value="💋 Use `/leaderboard <rank>`",
-            inline=False
-        )
-        embed.add_field(
-            name="Coins Leaderboard",
-            value="💵 Use `/leaderboard <coins>`",
-            inline=False
-        )
-        embed.add_field(
-            name="Activity Leaderboard",
-            value="🎀 Use `/leaderboard <activity>`",
-            inline=False
-        )
-        embed.add_field(
-            name="",
-            value="*I love watching you work hard for me ~*",
-            inline=False
-        )
-        
-        if int(interaction.channel.id) in ALLOWED_SEND_SET:
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(embed=embed, delete_after=15)
-    
-    # Leaderboard command with choice parameter
-    @bot.tree.command(name="leaderboard", description="View leaderboards")
-    @app_commands.choices(leaderboard_type=[
-        app_commands.Choice(name="coins", value="coins"),
-        app_commands.Choice(name="activity", value="activity"),
-        app_commands.Choice(name="rank", value="rank"),
-    ])
-    async def leaderboard(interaction: discord.Interaction, leaderboard_type: app_commands.Choice[str]):
-        """Show leaderboard based on type"""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        from core.data import xp_data
-        
-        guild = interaction.guild
-        if guild:
-            guild_member_ids = {str(member.id) for member in guild.members}
-            filtered_xp_data = {uid: data for uid, data in xp_data.items() if uid in guild_member_ids}
-        else:
-            filtered_xp_data = xp_data
-        
-        lb_type = leaderboard_type.value if isinstance(leaderboard_type, app_commands.Choice) else leaderboard_type
-        
-        if lb_type == "levels":
-            sorted_users = sorted(filtered_xp_data.items(), key=lambda x: x[1].get("xp", 0), reverse=True)
-            if not sorted_users:
-                embed = discord.Embed(
-                    title="💋 Levels Leaderboard",
-                    description="No users found in this server.",
-                    color=0x58585f,
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            embed = build_levels_leaderboard_embed(sorted_users, page=0, users_per_page=20)
-            view = LeaderboardView(sorted_users, build_levels_leaderboard_embed, users_per_page=20)
-            
-            try:
-                if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                    await interaction.response.send_message(embed=embed, view=view)
-                else:
-                    await interaction.response.send_message(embed=embed, view=view, delete_after=15)
-            except Exception as e:
-                print(f"Error sending leaderboard: {e}")
-                if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                    await interaction.response.send_message(embed=embed)
-                else:
-                    await interaction.response.send_message(embed=embed, delete_after=15)
-            return
-            
-        elif lb_type == "coins":
-            sorted_users = sorted(filtered_xp_data.items(), key=lambda x: x[1].get("coins", 0), reverse=True)
-            if not sorted_users:
-                embed = discord.Embed(
-                    title="💵 Coin Leaderboard",
-                    description="No users found in this server.",
-                    color=0x58585f,
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            embed = build_coins_leaderboard_embed(sorted_users, page=0, users_per_page=20)
-            view = LeaderboardView(sorted_users, build_coins_leaderboard_embed, users_per_page=20)
-            
-            try:
-                if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                    await interaction.response.send_message(embed=embed, view=view)
-                else:
-                    await interaction.response.send_message(embed=embed, view=view, delete_after=15)
-            except Exception as e:
-                print(f"Error sending leaderboard: {e}")
-                if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                    await interaction.response.send_message(embed=embed)
-                else:
-                    await interaction.response.send_message(embed=embed, delete_after=15)
-            return
-            
-        elif lb_type == "activity":
-            sorted_users = sorted(
-                filtered_xp_data.items(),
-                key=lambda x: (x[1].get("messages_sent", 0) + x[1].get("vc_minutes", 0)),
-                reverse=True
-            )
-            if not sorted_users:
-                embed = discord.Embed(
-                    title="🎀 Activity Leaderboard",
-                    description="No users found in this server.",
-                    color=0x58585f,
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            embed = build_activity_leaderboard_embed(sorted_users, page=0, users_per_page=20)
-            view = LeaderboardView(sorted_users, build_activity_leaderboard_embed, users_per_page=20)
-            
-            try:
-                if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                    await interaction.response.send_message(embed=embed, view=view)
-                else:
-                    await interaction.response.send_message(embed=embed, view=view, delete_after=15)
-            except Exception as e:
-                print(f"Error sending leaderboard: {e}")
-                if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                    await interaction.response.send_message(embed=embed)
-                else:
-                    await interaction.response.send_message(embed=embed, delete_after=15)
-            return
-        
-        else:
-            embed = discord.Embed(
-                title="Leaderboards",
-                description="Which leaderboard would you like to check?\n",
-                color=0x58585f
-            )
-            embed.add_field(
-                name="Rank Leaderboard",
-                value="💋 Use `/leaderboard <rank>`",
-                inline=False
-            )
-            embed.add_field(
-                name="Coins Leaderboard",
-                value="💵 Use `/leaderboard <coins>`",
-                inline=False
-            )
-            embed.add_field(
-                name="Activity Leaderboard",
-                value="🎀 Use `/leaderboard <activity>`",
-                inline=False
-            )
-            embed.add_field(
-                name="",
-                value="*I love watching you work hard for me ~*",
-                inline=False
-            )
-            
-            if int(interaction.channel.id) in ALLOWED_SEND_SET:
-                await interaction.response.send_message(embed=embed)
-            else:
-                await interaction.response.send_message(embed=embed, delete_after=15)
-    
-    @bot.tree.command(name="info", description="Show bot information")
-    async def info(interaction: discord.Interaction):
-        """Show bot information."""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        embed = discord.Embed(
-            title="IslaBot Information",
-            description="A leveling and obedience event bot for Isla's server.",
-            color=0xff000d,
-        )
-        embed.add_field(name="Commands", value="`/level check` - Check your level\n`/leaderboard` - View leaderboards\n`/leaderboard levels` - View levels leaderboard\n`/leaderboard coins` - View coins leaderboard\n`/leaderboard activity` - View activity leaderboard", inline=False)
-        embed.add_field(name="XP System", value="Gain XP by sending messages and participating in voice chat.", inline=False)
-        embed.add_field(name="Events", value="Participate in obedience events to earn bonus XP and rewards.", inline=False)
-        
-        await interaction.response.send_message(embed=embed)
+    # /info command deleted per D5
     
     @bot.tree.command(name="balance", description="Show your coin balance")
     async def balance(interaction: discord.Interaction):
@@ -381,7 +118,10 @@ def register_commands(bot_instance):
     
     @bot.tree.command(name="daily", description="Claim your daily coins")
     async def daily(interaction: discord.Interaction):
-        """Claim daily coins."""
+        """Claim daily coins - always responds within 3s (D3)."""
+        # Always respond immediately
+        await interaction.response.defer()
+        
         if not await check_user_command_permissions(interaction):
             return
         
@@ -404,7 +144,7 @@ def register_commands(bot_instance):
                 color=0xff000d,
             )
             embed.set_footer(text="Resets at 6:00 PM GMT")
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         
         guild_id = interaction.guild.id if interaction.guild else 0
@@ -447,7 +187,7 @@ def register_commands(bot_instance):
         embed.set_thumbnail(url="https://i.imgur.com/ZKq5nZ2.png")
         embed.set_footer(text="Resets daily at 6:00 PM GMT")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
     
     @bot.tree.command(name="give", description="Give coins to another user")
     @app_commands.describe(member="The user to give coins to", amount="The amount of coins to give")
@@ -493,30 +233,7 @@ def register_commands(bot_instance):
         await interaction.response.send_message(content=member.mention, embed=embed)
     
     # Gambling commands - import from gambling module
-    @bot.tree.command(name="gamble", description="Gamble coins - 49/51 chance to double or lose")
-    @app_commands.describe(bet="The amount of coins to bet (minimum 10)")
-    async def gamble_command(interaction: discord.Interaction, bet: int):
-        await gamble(interaction, bet)
-    
-    @bot.tree.command(name="gambleinfo", description="Show gamble command info")
-    async def gambleinfo(interaction: discord.Interaction):
-        """Show gamble command info."""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        embed = build_casino_embed(
-            kind="info",
-            outcome=None,
-            title="ℹ️ Coinflip Info",
-            description="49/51 chance to double or lose.",
-            fields=[
-                {"name": "Min Bet", "value": "**10** coins", "inline": True},
-                {"name": "Payout", "value": "**x2**", "inline": True},
-                {"name": "Cooldown", "value": "**8s**", "inline": True}
-            ],
-            footer_text="Use /gamble <bet> or /coinflip <bet>"
-        )
-        await interaction.response.send_message(embed=embed)
+    # /gamble command removed per A1
     
     @bot.tree.command(name="dice", description="Roll dice - win if your roll > dealer roll")
     @app_commands.describe(bet="The amount of coins to bet (minimum 50)")
@@ -599,25 +316,144 @@ def register_commands(bot_instance):
         )
         await interaction.response.send_message(embed=embed)
     
-    @bot.tree.command(name="casinoinfo", description="Show casino info")
-    async def casinoinfo(interaction: discord.Interaction):
-        """Show casino info."""
+    @bot.tree.command(name="casino", description="Show casino information")
+    async def casino(interaction: discord.Interaction):
+        """Show casino information."""
         if not await check_user_command_permissions(interaction):
             return
         
-        embed = build_casino_embed(
-            kind="info",
-            outcome=None,
-            title="ℹ️ Casino Overview",
-            description="All games use unified validation: **debt blocking**, **rank caps**, **channel enforcement**, and **LCE tracking**.",
-            fields=[
-                {"name": "Games", "value": "`/coinflip` `/gamble` • `/dice` • `/slots` • `/roulette` • `/blackjack`", "inline": False},
-                {"name": "Cooldowns", "value": "Coinflip 8s • Dice 10s • Slots 15s • Roulette 20s • Blackjack 30s", "inline": False},
-                {"name": "Streaks", "value": "🔥 Hot: 3+ wins • 🥶 Cold: 5+ losses • resets after 1h inactivity", "inline": False}
-            ],
-            footer_text="Use the /<game>info commands for full rules."
+        user_id = interaction.user.id
+        
+        embed = discord.Embed(
+            title="<a:A_shuffle:1451743595681026125> Isla's Casino",
+            description="Welcome to my casino — where luck comes to play <:kisses:1449998044446593125>",
+            colour=0x0fa3ff
         )
-        await interaction.response.send_message(embed=embed)
+        embed.add_field(name="Games",
+                        value="`/coinflip`\n`/dice`\n`/slots`\n`/roulette`\n`/blackjack`",
+                        inline=True)
+        embed.add_field(name="Cooldowns",
+                        value="Coinflip 8s\nDice 10s\nSlots 15s\nRoulette 20s\nBlackjack 30s",
+                        inline=True)
+        embed.add_field(name="Streaks",
+                        value="🔥 3+ wins\n🥶 5+ losses",
+                        inline=True)
+        embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+        embed.set_footer(text="Have fun losing~")
+        
+        content = f"<@{user_id}>"
+        await interaction.response.send_message(content=content, embed=embed)
+    
+    @bot.tree.command(name="casinoinfo", description="Show detailed information about a specific game")
+    async def casinoinfo(interaction: discord.Interaction):
+        """Show casino game info - uses Select Menu."""
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        # Create Select Menu view
+        class CasinoInfoSelectView(discord.ui.View):
+            def __init__(self, user_id):
+                super().__init__(timeout=300)
+                self.user_id = user_id
+            
+            @discord.ui.select(
+                placeholder="Select a game to view info...",
+                options=[
+                    discord.SelectOption(label="Coinflip", value="coinflip", description="49/51 chance to double or lose"),
+                    discord.SelectOption(label="Dice", value="dice", description="Roll 1–6 vs dealer. Higher roll wins."),
+                    discord.SelectOption(label="Slots", value="slots", description="3 reel weighted symbols. Match 3-of-a-kind to win."),
+                    discord.SelectOption(label="Roulette", value="roulette", description="Bet on red/black/green or a number"),
+                    discord.SelectOption(label="Blackjack", value="blackjack", description="Get closer to 21 than the dealer"),
+                ]
+            )
+            async def select_callback(self, select_interaction: discord.Interaction, select: discord.ui.Select):
+                if select_interaction.user.id != self.user_id:
+                    await select_interaction.response.send_message("This is not your menu.", ephemeral=True)
+                    return
+                
+                game = select.values[0]
+                await self.send_game_info(select_interaction, game)
+            
+            async def send_game_info(self, interaction: discord.Interaction, game: str):
+                user_id = interaction.user.id
+                content = f"<@{user_id}>"
+                
+                if game == "coinflip":
+                    embed = discord.Embed(
+                        title="ℹ️ Coinflip Info",
+                        description="49/51 chance to double or lose.",
+                        colour=0x0fa3ff
+                    )
+                    embed.add_field(name="Min Bet", value="**10** coins", inline=True)
+                    embed.add_field(name="Payout", value="**x2**", inline=True)
+                    embed.add_field(name="Cooldown", value="**8s**", inline=True)
+                    embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+                    embed.set_footer(text="Use /coinflip <bet>")
+                
+                elif game == "dice":
+                    embed = discord.Embed(
+                        title="ℹ️ Dice Info",
+                        description="Roll 1–6 vs dealer. Higher roll wins.",
+                        colour=0x0fa3ff
+                    )
+                    embed.add_field(name="Min Bet", value="**50** coins", inline=True)
+                    embed.add_field(name="Payout", value="**x2**", inline=True)
+                    embed.add_field(name="Ties", value="Bet returned", inline=True)
+                    embed.add_field(name="Cooldown", value="**10s**", inline=True)
+                    embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+                    embed.set_footer(text="Use /dice <bet>")
+                
+                elif game == "slots":
+                    embed = discord.Embed(
+                        title="<a:A_shuffle:1451743595681026125> Isla's Casino",
+                        description="Not all wins are equal. Some are worth waiting for.",
+                        colour=0x0fa3ff
+                    )
+                    embed.add_field(name="Multipliers",
+                                    value="🥝 x1.5\n🍇 x2\n🍋 x3\n🍑 x5\n🍉 x8\n🍒 x15\n👑 x30 **JACKPOT**",
+                                    inline=True)
+                    embed.add_field(name="Bonus",
+                                    value="3x 🎁 +5 free spins\n2x 🎁 +2 free spins",
+                                    inline=True)
+                    embed.add_field(name="Extra",
+                                    value="Cooldown: 15s\nMinimum bet: 10\nBonus: `/slots free`",
+                                    inline=True)
+                    embed.add_field(name="Safety Nets",
+                                    value="2-of-a-kind -50% loss",
+                                    inline=False)
+                    embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+                    embed.set_footer(text="Good luck… and good losses~")
+                
+                elif game == "roulette":
+                    embed = discord.Embed(
+                        title="ℹ️ Roulette Info",
+                        description="Bet on red/black/green or a number (0-36).",
+                        colour=0x0fa3ff
+                    )
+                    embed.add_field(name="Bet Types", value="Red/Black: x2\nGreen: x14\nNumber: x36", inline=True)
+                    embed.add_field(name="Cooldown", value="**20s**", inline=True)
+                    embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+                    embed.set_footer(text="Use /roulette <bet> <choice>")
+                
+                elif game == "blackjack":
+                    embed = discord.Embed(
+                        title="ℹ️ Blackjack Info",
+                        description="Get closer to 21 than the dealer without going over.",
+                        colour=0x0fa3ff
+                    )
+                    embed.add_field(name="Actions", value="Hit, Stand, Double", inline=True)
+                    embed.add_field(name="Payout", value="Blackjack: 3:2\nWin: x2\nTie: Refund", inline=True)
+                    embed.add_field(name="Cooldown", value="**30s**", inline=True)
+                    embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+                    embed.set_footer(text="Use /blackjack <bet>")
+                
+                await interaction.response.send_message(content=content, embed=embed)
+        
+        # Send public message with mention (A3: casinoinfo must be public)
+        user_id = interaction.user.id
+        content = f"<@{user_id}>"
+        view = CasinoInfoSelectView(user_id)
+        await interaction.response.send_message(content=content + "\nSelect a game to view information:", view=view)
     
     @bot.tree.command(name="coinflip", description="Coin flip - same as gamble (49/51 chance)")
     @app_commands.describe(bet="The amount of coins to bet (minimum 10)")
@@ -627,11 +463,31 @@ def register_commands(bot_instance):
     @bot.tree.command(name="coinflipinfo", description="Show coinflip info")
     async def coinflipinfo(interaction: discord.Interaction):
         """Show coinflip info."""
-        await gambleinfo(interaction)
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        user_id = interaction.user.id
+        content = f"<@{user_id}>"
+        
+        embed = discord.Embed(
+            title="ℹ️ Coinflip Info",
+            description="49/51 chance to double or lose.",
+            colour=0x0fa3ff
+        )
+        embed.add_field(name="Min Bet", value="**10** coins", inline=True)
+        embed.add_field(name="Payout", value="**x2**", inline=True)
+        embed.add_field(name="Cooldown", value="**8s**", inline=True)
+        embed.set_thumbnail(url="https://i.imgur.com/W30kCYP.png")
+        embed.set_footer(text="Use /coinflip <bet>")
+        
+        await interaction.response.send_message(content=content, embed=embed)
     
     @bot.tree.command(name="allin", description="Go all-in on a game (bet all coins)")
-    @app_commands.describe(game="The game to play (gamble, dice, slots, blackjack, or roulette)")
+    @app_commands.describe(game="The game to play (coinflip, dice, slots, blackjack, or roulette)")
     async def allin_command(interaction: discord.Interaction, game: str):
+        # Update game name from gamble to coinflip
+        if game.lower() in ["gamble", "bet", "cf"]:
+            game = "coinflip"
         await allin(interaction, game)
     
     @bot.tree.command(name="roulette", description="Play roulette - bet on red/black/green or a number")
@@ -1024,10 +880,12 @@ def register_commands(bot_instance):
         return embed
     
     # Profile commands
-    @bot.tree.command(name="profile", description="View your profile or another user's profile")
-    @app_commands.describe(member="The member to view (optional, defaults to you)")
-    async def profile(interaction: discord.Interaction, member: discord.Member = None):
-        """View profile"""
+    @bot.tree.command(name="profile", description="View your profile")
+    async def profile(interaction: discord.Interaction):
+        """View profile - always responds within 3s (D3)."""
+        # Always respond immediately
+        await interaction.response.defer()
+        
         if not await check_user_command_permissions(interaction):
             return
         
@@ -1040,9 +898,9 @@ def register_commands(bot_instance):
             await record_command_event(guild_id, user_id, "profile", channel_id)
             await bump_command(guild_id, user_id)
         
-        member = member or interaction.user
+        member = interaction.user
         if not isinstance(member, discord.Member):
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.data import get_profile_stats
@@ -1061,21 +919,34 @@ def register_commands(bot_instance):
         embed = build_profile_embed(member, stats)
         
         if int(interaction.channel.id) in ALLOWED_SEND_SET:
-            await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
+            await interaction.followup.send(content=f"<@{member.id}>", embed=embed)
         else:
-            await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
+            await interaction.followup.send(content=f"<@{member.id}>", embed=embed, delete_after=15)
     
-    # Rank commands
+    # Rank commands - /rank view deleted per D1, now /rank shows only invoker
     rank_group = app_commands.Group(name="rank", description="Rank progress commands")
     
-    @rank_group.command(name="view", description="View your personal rank progress")
-    @app_commands.describe(member="The member to view (optional, defaults to you)")
-    async def rank(interaction: discord.Interaction, member: discord.Member = None):
-        """View personal rank progress"""
+    @rank_group.command(name="info", description="View information about the rank system")
+    async def rank_info(interaction: discord.Interaction):
+        """View rank system information"""
         if not await check_user_command_permissions(interaction):
             return
         
-        member = member or interaction.user
+        embed = build_rank_info_embed()
+        
+        if int(interaction.channel.id) in ALLOWED_SEND_SET:
+            await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message(embed=embed, delete_after=15)
+    
+    @bot.tree.command(name="rank", description="View your personal rank progress")
+    async def rank(interaction: discord.Interaction):
+        """View personal rank progress - shows only invoker (D1)"""
+        if not await check_user_command_permissions(interaction):
+            return
+        
+        # Always use invoker, no member parameter
+        member = interaction.user
         if not isinstance(member, discord.Member):
             await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
             return
@@ -1132,19 +1003,6 @@ def register_commands(bot_instance):
         else:
             await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
     
-    @rank_group.command(name="info", description="View information about the rank system")
-    async def rank_info(interaction: discord.Interaction):
-        """View rank system information"""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        embed = build_rank_info_embed()
-        
-        if int(interaction.channel.id) in ALLOWED_SEND_SET:
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(embed=embed, delete_after=15)
-    
     bot.tree.add_command(rank_group)
     
     # Coins commands group
@@ -1152,12 +1010,15 @@ def register_commands(bot_instance):
     
     @coins_group.command(name="weekly", description="Claim your weekly coins based on activity and obedience")
     async def coins_weekly(interaction: discord.Interaction):
-        """Claim weekly coins"""
+        """Claim weekly coins - always responds within 3s (D3)."""
+        # Always respond immediately
+        await interaction.response.defer()
+        
         if not await check_user_command_permissions(interaction):
             return
         
         if not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.data import get_profile_stats
@@ -1180,7 +1041,7 @@ def register_commands(bot_instance):
             
             if days_since_claim < 7:
                 days_remaining = 7 - days_since_claim
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"You can claim weekly coins again in {days_remaining} day(s).",
                     ephemeral=True,
                     delete_after=10
@@ -1246,9 +1107,9 @@ def register_commands(bot_instance):
         embed.set_footer(text="Weekly claims reset every 7 days.")
         
         if int(interaction.channel.id) in ALLOWED_SEND_SET:
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed)
         else:
-            await interaction.response.send_message(embed=embed, delete_after=15)
+            await interaction.followup.send(embed=embed, delete_after=15)
     
     bot.tree.add_command(coins_group)
     
@@ -1426,6 +1287,59 @@ def register_commands(bot_instance):
             return f"{minutes}m"
         return "Now"
     
+    def _generate_task_description(steps_json: dict) -> str:
+        """Generate task description from steps_json (E2: update wording based on actual requirements)"""
+        step_type = steps_json.get("type")
+        
+        if step_type == "message_count":
+            min_count = steps_json.get("min_count", 1)
+            spacing = steps_json.get("spacing_seconds", 0)
+            if spacing > 0:
+                spacing_min = spacing // 60
+                return f"Send {min_count} message(s) with at least {spacing_min} minute(s) between each."
+            else:
+                return f"Send {min_count} message(s)."
+        
+        elif step_type == "command_used":
+            cmd = steps_json.get("command", "/profile")
+            return f"Use the {cmd} command."
+        
+        elif step_type == "reply_count":
+            min_count = steps_json.get("min_count", 1)
+            exclude_bots = steps_json.get("exclude_bots", False)
+            if exclude_bots:
+                return f"Reply to {min_count} message(s) from other users (not bots)."
+            else:
+                return f"Reply to {min_count} message(s)."
+        
+        elif step_type == "vc_minutes":
+            min_minutes = steps_json.get("min_minutes", 30)
+            return f"Spend at least {min_minutes} minute(s) in voice channels."
+        
+        elif step_type == "two_step":
+            cmd = steps_json.get("command_after", "/daily")
+            return f"Send a message, then use the {cmd} command within the time window."
+        
+        elif step_type == "forum_reaction_any_post":
+            category = steps_json.get("channel_category", "forum")
+            return f"React to any post in the {category} forum channel."
+        
+        elif step_type == "ledger_event":
+            event_type = steps_json.get("event_type", "burn")
+            min_amount = steps_json.get("min_amount", 100)
+            if event_type == "burn":
+                return f"Burn at least {min_amount} coin(s) through a discipline action (gambling, debt payment, etc.)."
+            else:
+                return f"Perform a ledger event of type '{event_type}' with amount at least {min_amount}."
+        
+        elif step_type == "reaction_on_channel_recent":
+            hours = steps_json.get("hours_recent", 24)
+            emoji = steps_json.get("emoji", "any emoji")
+            return f"React with {emoji} to a message posted within the last {hours} hour(s) in the specified channel."
+        
+        # Fallback to generic description
+        return "Complete the task as specified."
+    
     # Orders embed builders
     def build_orders_embed(available_orders: list, guild_id: int, user_id: int) -> discord.Embed:
         """Build the /orders embed with exact layout"""
@@ -1595,75 +1509,24 @@ def register_commands(bot_instance):
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # Task field
+        # Task field - generate description from steps_json (E2: update wording based on actual requirements)
+        task_description = _generate_task_description(order["steps_json"])
         embed.add_field(
             name="Task",
-            value=order["instructions"],
+            value=task_description,
             inline=False
         )
         
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # Completion field (derived from steps_json)
-        steps = order["steps_json"]
-        completion_desc = ""
-        
-        if steps["type"] == "message_count":
-            min_count = steps.get("min_count", 1)
-            spacing = steps.get("spacing_seconds", 0)
-            if spacing > 0:
-                spacing_min = spacing // 60
-                completion_desc = f"Send {min_count} message(s) with at least {spacing_min} minutes between each."
-            else:
-                completion_desc = f"Send {min_count} message(s)."
-        
-        elif steps["type"] == "command_used":
-            cmd = steps.get("command", "/profile")
-            completion_desc = f"Use the {cmd} command."
-        
-        elif steps["type"] == "reply_count":
-            min_count = steps.get("min_count", 1)
-            completion_desc = f"Reply to {min_count} message(s) from other users (not bots)."
-        
-        elif steps["type"] == "vc_minutes":
-            min_minutes = steps.get("min_minutes", 30)
-            completion_desc = f"Spend at least {min_minutes} minutes in voice channels."
-        
-        elif steps["type"] == "two_step":
-            cmd = steps.get("command_after", "/daily")
-            completion_desc = f"Send a message, then use {cmd} command within the time window."
-        
-        elif steps["type"] == "forum_reaction_any_post":
-            category = steps.get("channel_category", "forum")
-            completion_desc = f"React to any post in the {category} forum channel."
-        
-        elif steps["type"] == "ledger_event":
-            min_amount = steps.get("min_amount", 100)
-            completion_desc = f"Burn at least {min_amount} coins through discipline actions."
-        
-        elif steps["type"] == "reaction_on_channel_recent":
-            hours = steps.get("hours_recent", 24)
-            completion_desc = f"React to a message posted within the last {hours} hours."
-        
-        else:
-            completion_desc = "Complete the task as described."
-        
-        embed.add_field(
-            name="Completion",
-            value=completion_desc,
-            inline=False
-        )
+        # Completion field removed per E2
         
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # Commands field
-        embed.add_field(
-            name="Commands",
-            value=f"Accept: `/order accept {order['title']}`\nComplete: `/order complete {order['title']}`",
-            inline=False
-        )
+        # Commands field - remove redundant line per E2
+        # Field removed - buttons will handle actions
         
         # Status (optional)
         if not is_available:
@@ -1713,10 +1576,11 @@ def register_commands(bot_instance):
         # Spacer
         embed.add_field(name="", value="", inline=False)
         
-        # Task field
+        # Task field - generate description from steps_json (E2: update wording based on actual requirements)
+        task_description = _generate_task_description(order["steps_json"])
         embed.add_field(
             name="Task",
-            value=order["instructions"],
+            value=task_description,
             inline=False
         )
         
@@ -1870,21 +1734,39 @@ def register_commands(bot_instance):
             order = ORDERS_CATALOG[order_key]
             embed = build_order_info_embed(order_key, True)
             
-            view = OrderActionButtons(order_key, self.guild_id, self.user_id)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            view = OrderActionButtons(order_key, self.guild_id, self.user_id, parent_view=self)
+            # Order detail view is PUBLIC
+            await interaction.response.send_message(embed=embed, view=view)
     
     class OrderActionButtons(discord.ui.View):
-        def __init__(self, order_key: str, guild_id: int, user_id: int):
+        def __init__(self, order_key: str, guild_id: int, user_id: int, parent_view=None):
             super().__init__(timeout=300)
             self.order_key = order_key
             self.guild_id = guild_id
             self.user_id = user_id
+            self.parent_view = parent_view  # Reference to OrdersSelectView for Back button
+        
+        @discord.ui.button(label="⬅️", style=discord.ButtonStyle.secondary, custom_id="back_button")
+        async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            """Back button - returns to /orders list view"""
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message("This is not your order.", ephemeral=True)
+                return
+            
+            # Return to orders list
+            available_orders = await _get_available_orders(self.guild_id)
+            embed = build_orders_embed(available_orders, self.guild_id, self.user_id)
+            view = OrdersSelectView(available_orders, self.guild_id, self.user_id)
+            await interaction.response.edit_message(embed=embed, view=view)
         
         @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, emoji="✅")
         async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message("This is not your order.", ephemeral=True)
                 return
+            
+            # Defer immediately to avoid "application did not respond"
+            await interaction.response.defer()
             
             # Simulate /order accept logic
             from core.db import fetchone, execute
@@ -1900,7 +1782,7 @@ def register_commands(bot_instance):
             
             if active_run:
                 embed = build_order_accept_fail_embed("You already have this order accepted.")
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
             # Check postponed/declined
@@ -1913,17 +1795,17 @@ def register_commands(bot_instance):
             now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
             if state:
                 if state.get("postponed_until") and state["postponed_until"] > now_ts:
-                    await interaction.response.send_message("This order is postponed.", ephemeral=True)
+                    await interaction.followup.send("This order is postponed.", ephemeral=True)
                     return
                 if state.get("declined_until") and state["declined_until"] > now_ts:
-                    await interaction.response.send_message("This order was declined. Wait 24 hours.", ephemeral=True)
+                    await interaction.followup.send("This order was declined. Wait 24 hours.", ephemeral=True)
                     return
             
             # Accept order (reuse existing logic from order_accept)
             available_orders = await _get_available_orders(self.guild_id)
             if self.order_key not in available_orders:
                 embed = build_order_accept_fail_embed("This order is not available today.")
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
             # Check cooldown/reset rules
@@ -1962,29 +1844,12 @@ def register_commands(bot_instance):
             
             if run_id:
                 embed = build_order_accept_embed(self.order_key, order["due_seconds"])
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                # Edit original message to show accepted
+                await interaction.message.edit(embed=embed, view=None)
+                await interaction.followup.send("✅ Order accepted!", ephemeral=True)
             else:
                 embed = build_order_accept_fail_embed("Failed to accept order. Please try again.")
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        @discord.ui.button(label="Postpone", style=discord.ButtonStyle.grey, emoji="⏸️")
-        async def postpone_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if interaction.user.id != self.user_id:
-                await interaction.response.send_message("This is not your order.", ephemeral=True)
-                return
-            
-            # Mark postponed for 6 hours
-            from core.db import execute
-            now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
-            postpone_until = now_ts + (6 * 3600)
-            
-            await execute(
-                """INSERT OR REPLACE INTO order_user_state (guild_id, user_id, order_key, postponed_until)
-                   VALUES (?, ?, ?, ?)""",
-                (self.guild_id, self.user_id, self.order_key, postpone_until)
-            )
-            
-            await interaction.response.send_message("Postponed for 6 hours.", ephemeral=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)
         
         @discord.ui.button(label="Decline", style=discord.ButtonStyle.red, emoji="❌")
         async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -2003,11 +1868,15 @@ def register_commands(bot_instance):
                 (self.guild_id, self.user_id, self.order_key, decline_until)
             )
             
-            await interaction.response.send_message("Declined.", ephemeral=True)
+            # Edit original message to show declined
+            await interaction.response.defer()
+            embed = build_order_accept_fail_embed("Order declined. Wait 24 hours to accept again.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.message.edit(embed=embed, view=None)
     
     @bot.tree.command(name="orders", description="View available orders")
     async def orders(interaction: discord.Interaction):
-        """View available orders"""
+        """View available orders - PUBLIC (no ephemeral)"""
         if not await check_user_command_permissions(interaction):
             return
         
@@ -2018,7 +1887,7 @@ def register_commands(bot_instance):
         embed = build_orders_embed(available_orders, guild_id, user_id)
         
         view = OrdersSelectView(available_orders, guild_id, user_id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view)
     
     @order_group.command(name="info", description="Get information about an order")
     @app_commands.describe(order_name="The order to get information about")
@@ -2662,27 +2531,7 @@ def register_commands(bot_instance):
     
     bot.tree.add_command(order_group)
     
-    @bot.tree.command(name="collection", description="View your collection")
-    async def collection(interaction: discord.Interaction):
-        """View collection"""
-        if not await check_user_command_permissions(interaction):
-            return
-        
-        if not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
-            return
-        
-        from core.data import get_profile_stats
-        
-        member = interaction.user
-        guild_id = interaction.guild.id if interaction.guild else 0
-        stats = await get_profile_stats(guild_id, member.id)
-        embed = build_collection_embed(member, stats)
-        
-        if int(interaction.channel.id) in ALLOWED_SEND_SET:
-            await interaction.response.send_message(content=f"<@{member.id}>", embed=embed)
-        else:
-            await interaction.response.send_message(content=f"<@{member.id}>", embed=embed, delete_after=15)
+    # /collection command deleted per D2
     
     # Notifyme command (B1)
     class NotifymeView(discord.ui.View):
@@ -2723,7 +2572,10 @@ def register_commands(bot_instance):
     
     @bot.tree.command(name="notifyme", description="Enable or disable order notifications")
     async def notifyme(interaction: discord.Interaction):
-        """Notification preferences"""
+        """Notification preferences - always responds within 3s (D3)."""
+        # Always respond immediately
+        await interaction.response.defer()
+        
         if not await check_user_command_permissions(interaction):
             return
         
@@ -2736,5 +2588,5 @@ def register_commands(bot_instance):
         embed.set_author(name="Notifications")
         
         view = NotifymeView(guild_id, user_id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 

@@ -72,10 +72,26 @@ def build_casino_embed(kind, outcome, title, description, fields=None, footer_te
     else:  # neutral/base
         thumb = CASINO_THUMBNAILS["orange"]
     
+    # Apply embed color rules
+    if kind == "win" or (outcome is not None and outcome > 0):
+        embed_color = 0x0fff2b  # WIN: green
+    elif kind == "loss" or (outcome is not None and outcome < 0):
+        embed_color = 0xff0f0f  # LOSS: red
+    elif kind == "draw" or (outcome is not None and outcome == 0):
+        embed_color = 0xffdf0f  # DRAW: yellow
+    elif kind == "info":
+        embed_color = 0x0fa3ff  # Blue thumbnails/info
+    elif kind == "announcement":
+        embed_color = 0x930fff  # Purple thumbnails/info
+    elif kind == "neutral":
+        embed_color = 0xff830f  # Orange thumbnails/info
+    else:
+        embed_color = kwargs.get("color", 0x58585f)
+    
     embed = discord.Embed(
         title=title,
         description=description,
-        color=kwargs.get("color", 0x58585f)
+        color=embed_color
     )
     embed.set_thumbnail(url=thumb)
     
@@ -264,7 +280,9 @@ def set_events_enabled(enabled: bool):
     events_enabled = enabled
 
 def update_gambling_streak(user_id, won):
-    """Update gambling streak for user. Returns streak count."""
+    """Update gambling streak for user. Returns streak count.
+    Streaks do not reset after inactivity - they persist until broken by opposite outcome.
+    """
     now = datetime.datetime.now(datetime.UTC)
     
     if user_id not in gambling_streaks:
@@ -272,10 +290,7 @@ def update_gambling_streak(user_id, won):
     
     streak_data = gambling_streaks[user_id]
     
-    # Check if inactive for 1 hour - reset streak
-    time_since = (now - streak_data["last_activity"]).total_seconds()
-    if time_since >= 3600:
-        streak_data["streak"] = 0
+    # Streaks persist - do NOT reset after inactivity
     
     # Update streak
     if won:

@@ -70,17 +70,23 @@ async def check_admin_command_permissions(interaction_or_ctx) -> bool:
     if isinstance(interaction_or_ctx, discord.Interaction):
         channel_id = interaction_or_ctx.channel.id
         user = interaction_or_ctx.user
+        guild_id = interaction_or_ctx.guild.id if interaction_or_ctx.guild else 0
         is_interaction = True
     else:
         channel_id = interaction_or_ctx.channel.id
         user = interaction_or_ctx.author
+        guild_id = interaction_or_ctx.guild.id if interaction_or_ctx.guild else 0
         is_interaction = False
     
-    if channel_id != ADMIN_COMMAND_CHANNEL_ID:
+    # Use configured logs channel (C2: restrict to logs channel only)
+    from core.db import get_logs_channel_id
+    logs_channel_id = await get_logs_channel_id(guild_id)
+    
+    if channel_id != logs_channel_id:
         if is_interaction:
-            await interaction_or_ctx.response.send_message(f"This command can only be used in <#{ADMIN_COMMAND_CHANNEL_ID}>.", ephemeral=True, delete_after=5)
+            await interaction_or_ctx.response.send_message(f"This command can only be used in <#{logs_channel_id}>.", ephemeral=True, delete_after=5)
         else:
-            await interaction_or_ctx.send(f"This command can only be used in <#{ADMIN_COMMAND_CHANNEL_ID}>.", delete_after=5)
+            await interaction_or_ctx.send(f"This command can only be used in <#{logs_channel_id}>.", delete_after=5)
         return False
     
     if not isinstance(user, discord.Member):
@@ -165,14 +171,7 @@ def register_commands(bot_instance):
     
     # Legacy event commands removed - event system disabled
     
-    @bot.tree.command(name="testembeds", description="Preview the main embed formats used by the bot. Admin only.")
-    async def testembeds(interaction: discord.Interaction):
-        """Preview the main embed formats used by the bot."""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        # Legacy level-up and event embed previews removed - V3 progression system only
-        await interaction.response.send_message("⚠️ testembeds command is deprecated (legacy level/event system removed). Use /testmessage instead.", ephemeral=True)
+    # /testembeds command deleted per B1
     
     @bot.tree.command(name="throne", description="Send a Throne message with quote variations. Admin only.")
     async def throne(interaction: discord.Interaction):
@@ -374,49 +373,7 @@ def register_commands(bot_instance):
     
     # Legacy stopevents/startevents commands removed - event system disabled
     
-    @bot.tree.command(name="askgifts", description="Send Christmas Eve gifts message to events channel")
-    async def askgifts(interaction: discord.Interaction):
-        """Send Christmas Eve gifts embed to events channel."""
-        if not await check_admin_command_permissions(interaction):
-            return
-        
-        events_channel = bot.get_channel(EVENT_CHANNEL_ID)
-        
-        if not events_channel:
-            embed = discord.Embed(
-                title="❌ Error",
-                description=f"Could not find events channel (ID: {EVENT_CHANNEL_ID})",
-                color=0xff000d,
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="Christmas Eve Gifts",
-            description="It's Christmas Eve, loves~\n\nI see some pups are already spoiling me beautifully.\nTheir names are lighting up my night \n\nYours could be next <:Islaseductive:1451296572255109210>\n\nDon't hold back.\nI know you want to see me smile~ 💝\n\n\n🎄 [Get Gifts](https://throne.com/lsla) 🎄",
-            colour=0x750000,
-        )
-        embed.set_thumbnail(url="https://i.imgur.com/TplIFRf.png")
-        embed.set_footer(
-            text="Who's making my Christmas unforgettable?",
-            icon_url="https://i.imgur.com/358yI3s.png"
-        )
-        
-        try:
-            await events_channel.send(content="@everyone", embed=embed)
-            success_embed = discord.Embed(
-                title="✅ Success",
-                description=f"Christmas Eve gifts message sent to <#{EVENT_CHANNEL_ID}>",
-                color=0x4ec200,
-            )
-            await interaction.response.send_message(embed=success_embed, ephemeral=True)
-        except Exception as e:
-            error_embed = discord.Embed(
-                title="❌ Error",
-                description=f"Failed to send message to events channel: {e}",
-                color=0xff000d,
-            )
-            await interaction.response.send_message(embed=error_embed, ephemeral=True)
+    # /askgifts command deleted per D5
     
     # Onboarding configuration group
     configure_group = app_commands.Group(name="configure", description="Configure bot settings. Admin only.")
@@ -434,8 +391,12 @@ def register_commands(bot_instance):
         serverrole="For role: the server role to use"
     )
     async def configure_onboarding(interaction: discord.Interaction, config_type: str, name: str, serverrole: discord.Role = None):
-        """Configure onboarding channel or roles"""
+        """Configure onboarding channel or roles - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         from systems.onboarding import set_onboarding_channel, set_role
@@ -456,7 +417,7 @@ def register_commands(bot_instance):
                         break
             
             if not channel:
-                await interaction.response.send_message(f"Channel '{name}' not found. Please provide a channel mention, ID, or name.", ephemeral=True, delete_after=5)
+                await interaction.followup.send(f"Channel '{name}' not found. Please provide a channel mention, ID, or name.", ephemeral=True, delete_after=5)
                 return
             
             set_onboarding_channel(channel.id)
@@ -465,16 +426,16 @@ def register_commands(bot_instance):
                 description=f"Onboarding channel set to {channel.mention}",
                 color=0x4ec200
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         
         elif config_type_value == "role":
             valid_roles = ["Unverified", "Verified", "Bad Pup"]
             if name not in valid_roles:
-                await interaction.response.send_message(f"Invalid role type. Must be one of: {', '.join(valid_roles)}", ephemeral=True, delete_after=5)
+                await interaction.followup.send(f"Invalid role type. Must be one of: {', '.join(valid_roles)}", ephemeral=True, delete_after=5)
                 return
             
             if not serverrole:
-                await interaction.response.send_message("Please provide a server role.", ephemeral=True, delete_after=5)
+                await interaction.followup.send("Please provide a server role.", ephemeral=True, delete_after=5)
                 return
             
             set_role(name, serverrole.id)
@@ -483,7 +444,7 @@ def register_commands(bot_instance):
                 description=f"Onboarding role '{name}' set to {serverrole.mention}",
                 color=0x4ec200
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
     
     # Roles configuration embed builders
     def build_pronouns_embed() -> discord.Embed:
@@ -873,12 +834,16 @@ def register_commands(bot_instance):
     @introductions_group.command(name="set", description="Set the introductions channel")
     @app_commands.describe(channel="The channel to use for introductions")
     async def introductions_set(interaction: discord.Interaction, channel: discord.TextChannel):
-        """Set the introductions channel"""
+        """Set the introductions channel - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.db import execute
@@ -895,16 +860,20 @@ def register_commands(bot_instance):
             description=f"Introductions channel set to {channel.mention}",
             color=0x4ec200
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     @introductions_group.command(name="show", description="Show the current introductions channel")
     async def introductions_show(interaction: discord.Interaction):
-        """Show the current introductions channel"""
+        """Show the current introductions channel - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.db import fetchone
@@ -935,7 +904,7 @@ def register_commands(bot_instance):
                 color=0xff000d
             )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     # Orders configuration commands (B2)
     orders_config_group = app_commands.Group(name="orders", parent=configure_group, description="Configure orders system")
@@ -946,12 +915,16 @@ def register_commands(bot_instance):
     @casino_config_group.command(name="set", description="Set the casino channel")
     @app_commands.describe(channel="The channel to use for casino commands")
     async def casino_set(interaction: discord.Interaction, channel: discord.TextChannel):
-        """Set the casino channel"""
+        """Set the casino channel - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.db import execute, _now_iso
@@ -968,16 +941,20 @@ def register_commands(bot_instance):
             description=f"Casino channel set to {channel.mention}",
             color=0x4ec200
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     @casino_config_group.command(name="show", description="Show the current casino channel")
     async def casino_show(interaction: discord.Interaction):
-        """Show the current casino channel"""
+        """Show the current casino channel - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.db import get_casino_channel_id
@@ -999,7 +976,7 @@ def register_commands(bot_instance):
                 color=0xff000d
             )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     # Announcements configuration commands
     announcements_config_group = app_commands.Group(name="announcements", parent=configure_group, description="Configure announcements channel")
@@ -1007,12 +984,16 @@ def register_commands(bot_instance):
     @announcements_config_group.command(name="set", description="Set the announcements channel")
     @app_commands.describe(channel="The channel to use for announcements (throne, coffee, jackpots)")
     async def announcements_set(interaction: discord.Interaction, channel: discord.TextChannel):
-        """Set the announcements channel"""
+        """Set the announcements channel - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.db import execute, _now_iso
@@ -1029,16 +1010,20 @@ def register_commands(bot_instance):
             description=f"Announcements channel set to {channel.mention}",
             color=0x4ec200
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     @announcements_config_group.command(name="show", description="Show the current announcements channel")
     async def announcements_show(interaction: discord.Interaction):
-        """Show the current announcements channel"""
+        """Show the current announcements channel - always responds within 3s (C3)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
         if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
             return
         
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
             return
         
         from core.db import get_announcements_channel_id
@@ -1060,7 +1045,186 @@ def register_commands(bot_instance):
                 color=0xff000d
             )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    # Logs configuration commands (C1)
+    logs_config_group = app_commands.Group(name="logs", parent=configure_group, description="Configure logs channel (admin commands)")
+    
+    @logs_config_group.command(name="set", description="Set the logs channel (where admin commands can be used)")
+    @app_commands.describe(channel="The channel to use for admin commands")
+    async def logs_set(interaction: discord.Interaction, channel: discord.TextChannel):
+        """Set the logs channel"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
+        if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
+            return
+        
+        if not interaction.guild:
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import execute, _now_iso
+        now = _now_iso()
+        
+        await execute(
+            """INSERT OR REPLACE INTO logs_channel_config (guild_id, channel_id, updated_at)
+               VALUES (?, ?, ?)""",
+            (interaction.guild.id, channel.id, now)
+        )
+        
+        embed = discord.Embed(
+            title="✅ Configuration Updated",
+            description=f"Logs channel set to {channel.mention}\n\nAdmin commands can now only be used in this channel.",
+            color=0x4ec200
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    @logs_config_group.command(name="show", description="Show the current logs channel")
+    async def logs_show(interaction: discord.Interaction):
+        """Show the current logs channel"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
+        if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
+            return
+        
+        if not interaction.guild:
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import get_logs_channel_id
+        from core.config import ADMIN_COMMAND_CHANNEL_ID
+        
+        channel_id = await get_logs_channel_id(interaction.guild.id)
+        channel = bot.get_channel(channel_id)
+        
+        if channel:
+            embed = discord.Embed(
+                title="📋 Logs Configuration",
+                description=f"Current channel: {channel.mention}\n\nAdmin commands are restricted to this channel.",
+                color=0x4ec200
+            )
+        else:
+            embed = discord.Embed(
+                title="📋 Logs Configuration",
+                description=f"Channel ID: {channel_id} (channel not found)\n\nUsing default from config: {ADMIN_COMMAND_CHANNEL_ID}",
+                color=0xff000d
+            )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    # Usercommands configuration commands (C1)
+    usercommands_config_group = app_commands.Group(name="usercommands", parent=configure_group, description="Configure usercommands channels (multiple allowed)")
+    
+    @usercommands_config_group.command(name="set", description="Set usercommands channels (can be called multiple times to add channels)")
+    @app_commands.describe(channels="One or more channels where user commands can be used")
+    async def usercommands_set(interaction: discord.Interaction, channels: str):
+        """Set usercommands channels (comma-separated channel mentions or IDs)"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
+        if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
+            return
+        
+        if not interaction.guild:
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        # Parse channel mentions/IDs
+        channel_ids = []
+        parts = [p.strip() for p in channels.split(",")]
+        for part in parts:
+            # Try to extract channel ID from mention (<#123456789>)
+            if part.startswith("<#") and part.endswith(">"):
+                try:
+                    channel_id = int(part[2:-1])
+                    channel_ids.append(channel_id)
+                except ValueError:
+                    pass
+            else:
+                # Try as direct ID
+                try:
+                    channel_id = int(part)
+                    channel_ids.append(channel_id)
+                except ValueError:
+                    pass
+        
+        if not channel_ids:
+            await interaction.followup.send("No valid channel IDs found. Please provide channel mentions or IDs (comma-separated).", ephemeral=True)
+            return
+        
+        from core.db import execute, _now_iso
+        now = _now_iso()
+        guild_id = interaction.guild.id
+        
+        # Remove existing channels for this guild
+        await execute(
+            "DELETE FROM usercommands_channel_config WHERE guild_id = ?",
+            (guild_id,)
+        )
+        
+        # Add new channels
+        for channel_id in channel_ids:
+            channel = bot.get_channel(channel_id) or interaction.guild.get_channel(channel_id)
+            if channel:
+                await execute(
+                    """INSERT INTO usercommands_channel_config (guild_id, channel_id, updated_at)
+                       VALUES (?, ?, ?)""",
+                    (guild_id, channel_id, now)
+                )
+        
+        channel_mentions = " ".join(f"<#{cid}>" for cid in channel_ids if bot.get_channel(cid) or interaction.guild.get_channel(cid))
+        embed = discord.Embed(
+            title="✅ Configuration Updated",
+            description=f"Usercommands channels set to: {channel_mentions}\n\nUser commands can now be used in these channels.",
+            color=0x4ec200
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    @usercommands_config_group.command(name="show", description="Show the current usercommands channels")
+    async def usercommands_show(interaction: discord.Interaction):
+        """Show the current usercommands channels"""
+        # Always defer to avoid timeout (C3)
+        await interaction.response.defer(ephemeral=True)
+        
+        if not await check_admin_command_permissions(interaction):
+            await interaction.followup.send("Permission check failed.", ephemeral=True)
+            return
+        
+        if not interaction.guild:
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from core.db import get_usercommands_channel_ids
+        from core.config import USER_COMMAND_CHANNEL_ID
+        
+        channel_ids = await get_usercommands_channel_ids(interaction.guild.id)
+        channel_mentions = []
+        for channel_id in channel_ids:
+            channel = bot.get_channel(channel_id) or interaction.guild.get_channel(channel_id)
+            if channel:
+                channel_mentions.append(channel.mention)
+            else:
+                channel_mentions.append(f"<#{channel_id}> (not found)")
+        
+        if channel_mentions:
+            embed = discord.Embed(
+                title="📋 Usercommands Configuration",
+                description=f"Current channels: {' '.join(channel_mentions)}\n\nUser commands can be used in these channels.",
+                color=0x4ec200
+            )
+        else:
+            embed = discord.Embed(
+                title="📋 Usercommands Configuration",
+                description=f"Using default from config: <#{USER_COMMAND_CHANNEL_ID}>",
+                color=0xff000d
+            )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     # Debt group for debt management commands
     debt_group = app_commands.Group(name="debt", description="Debt management commands. Admin only.")
@@ -1512,6 +1676,70 @@ def register_commands(bot_instance):
             return
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    @bot.tree.command(name="orders_test", description="Test orders embed and views. Admin only.")
+    async def orders_test(interaction: discord.Interaction):
+        """Test orders embed and views - sends public /orders view"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        # Import orders embed builder and view
+        from commands.user_commands import build_orders_embed, OrdersSelectView, _get_available_orders
+        
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+        
+        available_orders = await _get_available_orders(guild_id)
+        embed = build_orders_embed(available_orders, guild_id, user_id)
+        view = OrdersSelectView(available_orders, guild_id, user_id)
+        
+        # Send publicly (no ephemeral) to match /orders behavior
+        await interaction.response.send_message(embed=embed, view=view)
+    
+    @bot.tree.command(name="onboarding_test", description="Test onboarding messages. Admin only.")
+    async def onboarding_test(interaction: discord.Interaction):
+        """Test onboarding messages - sends public onboarding rules"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not isinstance(interaction.user, discord.Member):
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        from systems.onboarding import send_onboarding_rules
+        
+        member = interaction.user
+        await send_onboarding_rules(interaction, member, is_reply=False)
+    
+    @bot.tree.command(name="introduction_test", description="Test introduction channel message. Admin only.")
+    async def introduction_test(interaction: discord.Interaction):
+        """Test introduction channel message - shows what happens when a message is sent"""
+        if not await check_admin_command_permissions(interaction):
+            return
+        
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+        
+        # Show what happens: the bot adds a ❤️ reaction
+        embed = discord.Embed(
+            title="📝 Introduction Channel Test",
+            description="When a message is sent in the introductions channel, IslaBot automatically adds a ❤️ reaction.\n\nThis is a test - in the actual channel, reactions are added automatically.",
+            color=0x4ec200
+        )
+        
+        # Add ❤️ reaction to this test message to demonstrate
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        try:
+            # Get the response message to add reaction
+            message = await interaction.original_response()
+            await message.add_reaction("❤️")
+        except:
+            pass
     
     @bot.tree.command(name="testmessage", description="Test onboarding and profile messages. Admin only.")
     @app_commands.describe(message_name="Name of the message to test", category="Category for profile_info (optional)")
